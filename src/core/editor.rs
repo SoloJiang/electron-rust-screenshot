@@ -1,5 +1,4 @@
 use super::types::{Color, LogicalPoint, Rect};
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
@@ -115,6 +114,7 @@ fn layer_id(layer: &Layer) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
     #[test]
     fn add_and_undo_layer() {

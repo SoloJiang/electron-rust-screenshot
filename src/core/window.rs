@@ -1,5 +1,8 @@
-use super::types::{DetectedWindow, LogicalPoint, Rect};
+use super::types::{DetectedWindow, LogicalPoint};
 use rstar::{RTree, RTreeObject, AABB};
+
+#[cfg(test)]
+use super::types::Rect;
 
 struct WindowItem {
     window: DetectedWindow,
