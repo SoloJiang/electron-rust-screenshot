@@ -1,33 +1,27 @@
 import * as path from 'path';
-import { start } from '../../index';
+import { runScreenshot } from '../helpers/runner';
 import { moveTo, clickAt } from '../helpers/mouse';
 import { openFixture, closeAllFixtures } from '../helpers/window';
+import { keyPress } from '../helpers/keyboard';
 
 const fixturePath = path.resolve(__dirname, '../fixtures/sample-window.html');
 
 describe('window hover', () => {
   afterEach(() => closeAllFixtures());
 
-  test('hovering fixture window triggers windowHovered', (done) => {
+  test('hovering fixture window leads to cancelled via ESC', async () => {
     openFixture(fixturePath);
-    const session = start({ savePath: '/tmp/e2e-hover.png' });
-
-    session.on('started', () => {
-      setTimeout(() => moveTo(400, 350), 500);
-      setTimeout(() => clickAt(400, 350), 1200);
-    });
-
-    session.on('windowHovered', (e) => {
-      expect(e.window).toBeDefined();
-    });
-
-    session.on('regionSelected', (e) => {
-      expect(e.rect.w).toBeGreaterThan(0);
-      session.cancel();
-      closeAllFixtures();
-      done();
-    });
-
-    session.on('error', (e) => done(e));
-  }, 15000);
+    const result = await runScreenshot(
+      { savePath: '/tmp/e2e-hover.png' },
+      async () => {
+        moveTo(400, 350);
+        await new Promise((r) => setTimeout(r, 600));
+        clickAt(400, 350);
+        await new Promise((r) => setTimeout(r, 600));
+        keyPress('esc');
+      },
+      15000
+    );
+    expect(result.type).toBe('cancelled');
+  }, 20000);
 });

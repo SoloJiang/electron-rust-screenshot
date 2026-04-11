@@ -29,6 +29,7 @@ pub struct Engine {
     pub show_debug_hud: bool,
     pub last_metrics: Option<super::events::MetricsPayload>,
     pub frames: Vec<ScreenFrame>,
+    pub should_close: bool,
 }
 
 impl Engine {
@@ -53,6 +54,7 @@ impl Engine {
             show_debug_hud: false,
             last_metrics: None,
             frames: Vec::new(),
+            should_close: false,
         }
     }
 
@@ -89,6 +91,7 @@ impl Engine {
 
     pub fn cancel(&mut self) {
         self.state = EngineState::Idle;
+        self.should_close = true;
         self.event_bus.emit(EngineEvent::Cancelled);
     }
 
@@ -119,6 +122,7 @@ impl Engine {
             }
         }
         self.state = EngineState::Idle;
+        self.should_close = true;
     }
 
     pub fn on_mouse_move(&mut self, pos: LogicalPoint) {

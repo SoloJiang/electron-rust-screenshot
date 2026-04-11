@@ -38,6 +38,7 @@ struct OverlayApp {
     painter: Option<egui_glow::Painter>,
     last_frame_time_ms: f64,
     last_egui_paint_ms: f64,
+    start_time: Option<std::time::Instant>,
 }
 
 impl OverlayApp {
@@ -53,6 +54,7 @@ impl OverlayApp {
             painter: None,
             last_frame_time_ms: 0.0,
             last_egui_paint_ms: 0.0,
+            start_time: None,
         }
     }
 }
@@ -89,6 +91,7 @@ impl ApplicationHandler for OverlayApp {
         self.egui_state = Some(egui_state);
         self.screenshot_app = Some(app);
         self.painter = Some(painter);
+        self.start_time = Some(std::time::Instant::now());
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -157,9 +160,23 @@ impl ApplicationHandler for OverlayApp {
         }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if let Some(window) = &self.window {
             window.request_redraw();
+        }
+        if self.engine.lock().unwrap().should_close {
+            event_loop.exit();
+            return;
+        }
+        if let Some(start) = self.start_time {
+            if let Ok(timeout_str) = std::env::var("SCREENSHOT_TEST_TIMEOUT_MS") {
+                if let Ok(timeout_ms) = timeout_str.parse::<u64>() {
+                    if start.elapsed().as_millis() as u64 > timeout_ms {
+                        self.engine.lock().unwrap().cancel();
+                        event_loop.exit();
+                    }
+                }
+            }
         }
     }
 }

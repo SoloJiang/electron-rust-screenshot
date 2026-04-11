@@ -1,16 +1,28 @@
-const { start } = require('./index');
+const { spawn, execSync } = require('child_process');
+const fs = require('fs');
+const tmpFile = '/tmp/smoke-result.json';
 
-const session = start({ savePath: '/tmp/smoke.png' });
-session.on('started', (e) => {
-  console.log('started', JSON.stringify(e));
-  session.cancel();
+const child = spawn('node', ['-e', `
+const fs = require('fs');
+const { start } = require('./lib');
+const result = start({ savePath: '/tmp/smoke.png' });
+fs.writeFileSync('${tmpFile}', JSON.stringify(result));
+`]);
+
+setTimeout(() => {
+  try {
+    execSync('/opt/homebrew/bin/cliclick kp:esc');
+  } catch (e) {}
+}, 1500);
+
+child.on('close', () => {
+  if (fs.existsSync(tmpFile)) {
+    const result = JSON.parse(fs.readFileSync(tmpFile, 'utf8'));
+    console.log('result', JSON.stringify(result));
+    fs.unlinkSync(tmpFile);
+    process.exit(0);
+  } else {
+    console.error('no result file');
+    process.exit(1);
+  }
 });
-session.on('cancelled', () => {
-  console.log('cancelled');
-  process.exit(0);
-});
-session.on('error', (e) => {
-  console.error('error', e);
-  process.exit(1);
-});
-setTimeout(() => process.exit(0), 3000);

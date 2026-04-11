@@ -2,7 +2,7 @@
   "name": "electron-rust-screenshot",
   "version": "0.1.0",
   "description": "",
-  "main": "index.js",
+  "main": "lib.js",
   "types": "index.d.ts",
   "directories": {
     "doc": "docs"

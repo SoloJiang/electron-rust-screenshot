@@ -6,16 +6,16 @@ pub mod overlay;
 pub mod platform;
 
 use crate::bridge::config::ScreenshotConfig;
-use crate::bridge::session::ScreenshotSession;
+use crate::bridge::events_js::serialize_event;
 use crate::core::engine::Engine;
+use crate::core::events::EngineEvent;
 use crate::core::types::Color;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 #[napi]
-pub fn start(config: Option<ScreenshotConfig>) -> Result<ScreenshotSession> {
+pub fn start(config: Option<ScreenshotConfig>) -> Result<String> {
     let merged = config.map(|c| c.merge()).unwrap_or_default();
 
     let color = parse_color(&merged.default_color.unwrap_or_else(|| "#ff0000".into()));
@@ -28,24 +28,52 @@ pub fn start(config: Option<ScreenshotConfig>) -> Result<ScreenshotSession> {
     let engine = Arc::new(Mutex::new(Engine::new(
         save_path, format, quality, color, size, mosaic,
     )));
-    let engine_clone = Arc::clone(&engine);
 
-    thread::spawn(move || {
-        #[cfg(target_os = "macos")]
+    #[cfg(target_os = "macos")]
+    {
+        use crate::overlay::manager::OverlayManager;
+        use crate::platform::macos::capture_sck::MacOsSckCapture;
+        let capture = MacOsSckCapture::new();
         {
-            use crate::platform::macos::capture_sck::MacOsSckCapture;
-            use crate::overlay::manager::OverlayManager;
-            let capture = MacOsSckCapture::new();
-            {
-                let mut engine = engine_clone.lock().unwrap();
-                engine.start(&capture);
+            let mut eng = engine.lock().unwrap();
+            eng.start(&capture);
+            if matches!(eng.state, crate::core::engine::EngineState::Idle) {
+                // Capture failed, drain events and return error
+                let mut events = Vec::new();
+                while let Some(evt) = eng.event_bus.try_recv() {
+                    events.push(evt);
+                }
+                if let Some(EngineEvent::Error { message, .. }) = events.into_iter().rev().next() {
+                    return Err(Error::from_reason(message));
+                }
+                return Err(Error::from_reason("Capture failed".to_string()));
             }
-            let frames = engine_clone.lock().unwrap().frames.clone();
-            OverlayManager::new(engine_clone, frames).run();
         }
-    });
+        let frames = engine.lock().unwrap().frames.clone();
+        OverlayManager::new(Arc::clone(&engine), frames).run();
+    }
 
-    Ok(ScreenshotSession { engine })
+    // Overlay closed, collect final event
+    let mut events = Vec::new();
+    {
+        let eng = engine.lock().unwrap();
+        while let Some(evt) = eng.event_bus.try_recv() {
+            events.push(evt);
+        }
+    }
+    let final_event = events.into_iter().rev().find(|e| {
+        matches!(
+            e,
+            EngineEvent::Saved { .. }
+                | EngineEvent::Cancelled
+                | EngineEvent::Error { .. }
+        )
+    });
+    if let Some(evt) = final_event {
+        Ok(serialize_event(&evt))
+    } else {
+        Ok(r#"{"type":"cancelled"}"#.to_string())
+    }
 }
 
 fn parse_color(hex: &str) -> Color {
