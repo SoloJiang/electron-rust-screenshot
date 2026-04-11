@@ -34,9 +34,14 @@ pub fn start(config: Option<ScreenshotConfig>) -> Result<ScreenshotSession> {
         #[cfg(target_os = "macos")]
         {
             use crate::platform::macos::capture_sck::MacOsSckCapture;
+            use crate::overlay::manager::OverlayManager;
             let capture = MacOsSckCapture::new();
-            engine_clone.lock().unwrap().start(&capture);
-            // Overlay run would go here in future tasks
+            {
+                let mut engine = engine_clone.lock().unwrap();
+                engine.start(&capture);
+            }
+            let frames = engine_clone.lock().unwrap().frames.clone();
+            OverlayManager::new(engine_clone, frames).run();
         }
     });
 

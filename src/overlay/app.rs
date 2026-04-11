@@ -1,3 +1,4 @@
+use crate::core::capture::ScreenFrame;
 use crate::core::engine::Engine;
 use crate::core::types::{Color, LogicalPoint, Rect};
 use crate::overlay::toolbar::draw_toolbar;
@@ -7,13 +8,26 @@ use std::sync::{Arc, Mutex};
 pub struct ScreenshotApp {
     pub engine: Arc<Mutex<Engine>>,
     pub frame_texture: Option<egui::TextureHandle>,
+    pub frames: Vec<ScreenFrame>,
 }
 
 impl ScreenshotApp {
-    pub fn new(engine: Arc<Mutex<Engine>>) -> Self {
+    pub fn new(engine: Arc<Mutex<Engine>>, frames: Vec<ScreenFrame>) -> Self {
         Self {
             engine,
             frame_texture: None,
+            frames,
+        }
+    }
+
+    pub fn load_screenshot_texture(&mut self, ctx: &egui::Context) {
+        if let Some(frame) = self.frames.first() {
+            let img = &frame.image;
+            let width = img.width() as usize;
+            let height = img.height() as usize;
+            let pixels = img.as_raw();
+            let color_image = egui::ColorImage::from_rgba_unmultiplied([width, height], pixels);
+            self.frame_texture = Some(ctx.load_texture("screenshot", color_image, Default::default()));
         }
     }
 
@@ -79,11 +93,16 @@ impl ScreenshotApp {
                     }
 
                     // Toolbar
-                    egui::TopBottomPanel::bottom("toolbar")
+                    let save_clicked = egui::TopBottomPanel::bottom("toolbar")
                         .frame(egui::Frame::window(&egui::Style::default()))
                         .show_inside(ui, |ui| {
-                            draw_toolbar(ui, &mut engine.editor);
-                        });
+                            draw_toolbar(ui, &mut engine.editor)
+                        })
+                        .inner;
+                    if save_clicked {
+                        let frames = &self.frames;
+                        engine.save(frames);
+                    }
 
                     // Draw layers
                     for layer in &engine.editor.layers {

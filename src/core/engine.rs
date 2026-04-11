@@ -28,6 +28,7 @@ pub struct Engine {
     pub quality: u8,
     pub show_debug_hud: bool,
     pub last_metrics: Option<super::events::MetricsPayload>,
+    pub frames: Vec<ScreenFrame>,
 }
 
 impl Engine {
@@ -51,6 +52,7 @@ impl Engine {
             quality,
             show_debug_hud: false,
             last_metrics: None,
+            frames: Vec::new(),
         }
     }
 
@@ -69,6 +71,7 @@ impl Engine {
                         dpi_scale: f.dpi_scale,
                     })
                     .collect();
+                self.frames = frames;
                 self.event_bus.emit(EngineEvent::Started {
                     screens: self.screens.clone(),
                 });

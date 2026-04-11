@@ -1,7 +1,8 @@
 use crate::core::editor::{EditorState, Tool};
 use egui::{RichText, Ui};
 
-pub fn draw_toolbar(ui: &mut Ui, editor: &mut EditorState) {
+pub fn draw_toolbar(ui: &mut Ui, editor: &mut EditorState) -> bool {
+    let mut save_clicked = false;
     ui.horizontal(|ui| {
         let tools = [
             ("Rect", Tool::Rect),
@@ -23,7 +24,8 @@ pub fn draw_toolbar(ui: &mut Ui, editor: &mut EditorState) {
             editor.undo();
         }
         if ui.button("Save").clicked() {
-            // Save triggered via engine in app layer
+            save_clicked = true;
         }
     });
+    save_clicked
 }

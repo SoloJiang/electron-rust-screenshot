@@ -77,7 +77,9 @@ impl ApplicationHandler for OverlayApp {
             None,
             None::<usize>,
         );
-        let app = ScreenshotApp::new(Arc::clone(&self.engine));
+        let frames = std::mem::take(&mut self._frames);
+        let mut app = ScreenshotApp::new(Arc::clone(&self.engine), frames);
+        app.load_screenshot_texture(&egui_ctx);
         let painter = egui_glow::Painter::new(gl.gl.clone(), "", None, true)
             .expect("Failed to create egui_glow Painter");
 
