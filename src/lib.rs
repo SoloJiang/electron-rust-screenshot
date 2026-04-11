@@ -33,8 +33,8 @@ pub fn start(config: Option<ScreenshotConfig>) -> Result<ScreenshotSession> {
     thread::spawn(move || {
         #[cfg(target_os = "macos")]
         {
-            use crate::platform::macos::capture_cg::MacOsCgCapture;
-            let capture = MacOsCgCapture::new();
+            use crate::platform::macos::capture_sck::MacOsSckCapture;
+            let capture = MacOsSckCapture::new();
             engine_clone.lock().unwrap().start(&capture);
             // Overlay run would go here in future tasks
         }

@@ -79,6 +79,22 @@ impl ScreenshotApp {
             }
         });
 
+        if engine.show_debug_hud {
+            let metrics = engine.perf.build_payload(0.0, 0.0, 0.0, 0.0);
+            engine.last_metrics = Some(metrics);
+            if let Some(m) = engine.last_metrics {
+                egui::Window::new("Debug HUD")
+                    .collapsible(false)
+                    .title_bar(false)
+                    .anchor(egui::Align2::LEFT_TOP, egui::vec2(10.0, 10.0))
+                    .show(ctx, |ui| {
+                        ui.label(format!("Capture: {:.2}ms", m.capture_ms));
+                        ui.label(format!("Hit P99: {:.2}ms", m.hit_test_p99_ms));
+                        ui.label(format!("Mem: {:.1}MB", m.memory_mb));
+                    });
+            }
+        }
+
         ctx.request_repaint_after(std::time::Duration::from_millis(16));
     }
 }

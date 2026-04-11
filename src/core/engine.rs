@@ -26,6 +26,8 @@ pub struct Engine {
     pub save_path: String,
     pub format: String,
     pub quality: u8,
+    pub show_debug_hud: bool,
+    pub last_metrics: Option<super::events::MetricsPayload>,
 }
 
 impl Engine {
@@ -47,6 +49,8 @@ impl Engine {
             save_path,
             format,
             quality,
+            show_debug_hud: false,
+            last_metrics: None,
         }
     }
 
