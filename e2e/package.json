@@ -1,0 +1,14 @@
+{
+  "name": "screenshot-e2e",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@types/jest": "^29",
+    "@types/node": "^20",
+    "jest": "^29",
+    "ts-jest": "^29",
+    "typescript": "^5"
+  }
+}
