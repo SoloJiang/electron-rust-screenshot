@@ -10,11 +10,12 @@ crate-type = ["cdylib", "rlib"]
 napi = { version = "2.16", default-features = false, features = ["napi9"] }
 napi-derive = "2.16"
 winit = "0.30"
-egui = "0.28"
-egui_glow = "0.28"
-glow = "0.13"
-glutin = "0.31"
-glutin-winit = "0.4"
+egui = "0.30"
+egui-winit = "0.30"
+egui_glow = "0.30"
+glow = "0.16"
+glutin = "0.32"
+glutin-winit = "0.5"
 raw-window-handle = "0.6"
 rstar = "0.12"
 uuid = { version = "1.8", features = ["v4"] }
