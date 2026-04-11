@@ -36,6 +36,8 @@ struct OverlayApp {
     egui_state: Option<EguiState>,
     screenshot_app: Option<ScreenshotApp>,
     painter: Option<egui_glow::Painter>,
+    last_frame_time_ms: f64,
+    last_egui_paint_ms: f64,
 }
 
 impl OverlayApp {
@@ -49,6 +51,8 @@ impl OverlayApp {
             egui_state: None,
             screenshot_app: None,
             painter: None,
+            last_frame_time_ms: 0.0,
+            last_egui_paint_ms: 0.0,
         }
     }
 }
@@ -116,6 +120,7 @@ impl ApplicationHandler for OverlayApp {
                 }
             }
             WindowEvent::RedrawRequested => {
+                let frame_start = std::time::Instant::now();
                 let size = window.inner_size();
                 gl.resize(size.width, size.height);
                 unsafe {
@@ -127,20 +132,23 @@ impl ApplicationHandler for OverlayApp {
 
                 let raw_input = egui_state.take_egui_input(window);
                 let full_output = egui_ctx.run(raw_input, |ctx| {
-                    app.update(ctx, &mut egui::Frame::none());
+                    app.update(ctx, &mut egui::Frame::none(), self.last_frame_time_ms, self.last_egui_paint_ms);
                 });
                 egui_state.handle_platform_output(window, full_output.platform_output);
 
                 let clipped_primitives = egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
                 let ppp = egui_ctx.native_pixels_per_point().unwrap_or(1.0);
+                let paint_start = std::time::Instant::now();
                 painter.paint_and_update_textures(
                     [size.width, size.height],
                     ppp,
                     &clipped_primitives,
                     &full_output.textures_delta,
                 );
+                self.last_egui_paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
 
                 gl.swap_buffers();
+                self.last_frame_time_ms = frame_start.elapsed().as_secs_f64() * 1000.0;
                 window.request_redraw();
             }
             _ => {}
