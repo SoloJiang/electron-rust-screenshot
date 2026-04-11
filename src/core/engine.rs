@@ -4,6 +4,7 @@ use super::events::{EngineEvent, ErrorCode, EventBus};
 use super::perf::PerformanceMonitor;
 use super::types::{Color, LogicalPoint, Rect, ScreenInfo};
 use super::window::WindowDetector;
+use crate::overlay::save::composite_and_save;
 use std::time::Instant;
 
 pub enum EngineState {
@@ -94,13 +95,73 @@ impl Engine {
         }
     }
 
-    pub fn save(&mut self, _frames: &[ScreenFrame]) {
+    pub fn save(&mut self, frames: &[ScreenFrame]) {
         self.state = EngineState::Saving;
-        self.event_bus.emit(EngineEvent::Saved {
-            path: self.save_path.clone(),
-            copied: false,
-        });
+        match composite_and_save(frames, &self.editor, &self.save_path, &self.format, self.quality) {
+            Ok(path) => {
+                self.event_bus.emit(EngineEvent::Saved {
+                    path,
+                    copied: false,
+                });
+            }
+            Err(msg) => {
+                self.event_bus.emit(EngineEvent::Error {
+                    code: ErrorCode::SaveFailed,
+                    message: msg,
+                });
+            }
+        }
         self.state = EngineState::Idle;
+    }
+
+    pub fn on_mouse_move(&mut self, pos: LogicalPoint) {
+        if let Some(detector) = &self.detector {
+            let hit = detector.hit_test(pos).cloned();
+            if let Some(win) = hit {
+                self.event_bus.emit(EngineEvent::WindowHovered { window: win });
+            }
+        }
+    }
+
+    pub fn on_mouse_down(&mut self, pos: LogicalPoint) {
+        if matches!(self.state, EngineState::OverlayRunning) {
+            self.state = EngineState::FreeSelecting { start: pos, current: pos };
+        }
+    }
+
+    pub fn on_mouse_drag(&mut self, pos: LogicalPoint) {
+        if let EngineState::FreeSelecting { start, .. } = &self.state {
+            if start.distance_sq(pos) > 16.0 {
+                if let EngineState::FreeSelecting { ref mut current, .. } = self.state {
+                    *current = pos;
+                }
+            }
+        }
+    }
+
+    pub fn on_mouse_up(&mut self, screen_id: String, _pos: LogicalPoint) {
+        if let EngineState::FreeSelecting { start, current } = self.state {
+            let dx = (current.x - start.x).abs();
+            let dy = (current.y - start.y).abs();
+            if dx < 4.0 && dy < 4.0 && dx * dy < 16.0 {
+                if let Some(detector) = &self.detector {
+                    if let Some(win) = detector.hit_test(start) {
+                        let rect = win.bounds;
+                        self.select_region(screen_id, rect);
+                        return;
+                    }
+                }
+                self.state = EngineState::OverlayRunning;
+            } else {
+                let rect = Rect::new(
+                    start.x.min(current.x),
+                    start.y.min(current.y),
+                    dx,
+                    dy,
+                );
+                self.select_region(screen_id, rect);
+            }
+        }
     }
 }
 
