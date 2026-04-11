@@ -15,7 +15,8 @@
     }
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "napi build --platform --release",
+    "test": "node test-smoke.js"
   },
   "keywords": [],
   "author": "",

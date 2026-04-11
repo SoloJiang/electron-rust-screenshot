@@ -11,6 +11,9 @@ function start(config = {}) {
     try {
       const evt = JSON.parse(raw);
       emitter.emit(evt.type, evt);
+      if (evt.type === 'saved' || evt.type === 'cancelled' || evt.type === 'error') {
+        clearInterval(interval);
+      }
     } catch (e) {
       emitter.emit('error', e);
     }
