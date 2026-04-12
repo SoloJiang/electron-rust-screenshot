@@ -55,6 +55,7 @@ struct MultiWindowApp {
     key_window_id: Option<winit::window::WindowId>,
     modifiers: winit::keyboard::ModifiersState,
     pending_frames: Vec<ScreenFrame>,
+    textures_delta_cache: Option<egui::TexturesDelta>,
 }
 
 impl MultiWindowApp {
@@ -71,6 +72,7 @@ impl MultiWindowApp {
             key_window_id: None,
             modifiers: winit::keyboard::ModifiersState::empty(),
             pending_frames: Vec::new(),
+            textures_delta_cache: None,
         }
     }
 
@@ -323,13 +325,16 @@ impl ApplicationHandler for MultiWindowApp {
 
                 let clipped_primitives =
                     self.egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
-                let ppp = self.egui_ctx.native_pixels_per_point().unwrap_or(1.0);
+                let ppp = full_output.pixels_per_point;
+                if self.textures_delta_cache.is_none() {
+                    self.textures_delta_cache = Some(full_output.textures_delta.clone());
+                }
                 let paint_start = std::time::Instant::now();
                 ws.painter.paint_and_update_textures(
                     [size.width, size.height],
                     ppp,
                     &clipped_primitives,
-                    &full_output.textures_delta,
+                    self.textures_delta_cache.as_ref().unwrap(),
                 );
                 ws.last_egui_paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
 
@@ -348,6 +353,8 @@ impl ApplicationHandler for MultiWindowApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        self.textures_delta_cache = None;
+
         for ws in self.windows.values() {
             ws.window.request_redraw();
         }
