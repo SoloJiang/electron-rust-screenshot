@@ -26,9 +26,10 @@ impl MacOsCgCapture {
         let mut rgba = RgbaImage::new(width, height);
         let data = img.data();
         let bytes = data.bytes();
+        let bytes_per_row = img.bytes_per_row() as usize;
         for y in 0..height {
             for x in 0..width {
-                let idx = ((y * width + x) * 4) as usize;
+                let idx = (y as usize * bytes_per_row) + (x as usize * 4);
                 let b = bytes[idx];
                 let g = bytes[idx + 1];
                 let r = bytes[idx + 2];
@@ -137,6 +138,12 @@ mod tests {
                         f.image.height(),
                         f.dpi_scale
                     );
+                    let path = format!("/tmp/screenshot-raw-screen-{}.png", f.screen_id);
+                    if let Err(e) = f.image.save(&path) {
+                        eprintln!("[debug_print_capture] failed to save {}: {}", path, e);
+                    } else {
+                        eprintln!("[debug_print_capture] saved raw capture to {}", path);
+                    }
                 }
             }
             Err(e) => eprintln!("[debug_print_capture] capture failed: {:?}", e),
