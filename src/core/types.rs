@@ -33,6 +33,20 @@ impl Rect {
             && self.y + self.h > other.y
     }
 
+    pub fn intersection(&self, other: Rect) -> Option<Rect> {
+        let x1 = self.x.max(other.x);
+        let y1 = self.y.max(other.y);
+        let x2 = (self.x + self.w).min(other.x + other.w);
+        let y2 = (self.y + self.h).min(other.y + other.h);
+        let w = x2 - x1;
+        let h = y2 - y1;
+        if w > 0.0 && h > 0.0 {
+            Some(Rect::new(x1, y1, w, h))
+        } else {
+            None
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.w <= 0.0 || self.h <= 0.0
     }
@@ -155,5 +169,23 @@ mod tests {
         let a = LogicalPoint::new(0.0, 0.0);
         let b = LogicalPoint::new(3.0, 4.0);
         assert_eq!(a.distance_sq(b), 25.0);
+    }
+
+    #[test]
+    fn rect_intersection() {
+        let a = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let b = Rect::new(50.0, 50.0, 100.0, 100.0);
+        let inter = a.intersection(b).unwrap();
+        assert_eq!(inter.x, 50.0);
+        assert_eq!(inter.y, 50.0);
+        assert_eq!(inter.w, 50.0);
+        assert_eq!(inter.h, 50.0);
+    }
+
+    #[test]
+    fn rect_intersection_none() {
+        let a = Rect::new(0.0, 0.0, 10.0, 10.0);
+        let b = Rect::new(20.0, 20.0, 10.0, 10.0);
+        assert!(a.intersection(b).is_none());
     }
 }
