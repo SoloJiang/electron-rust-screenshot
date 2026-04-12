@@ -19,6 +19,13 @@ pub enum EngineState {
     Saving,
 }
 
+pub struct SelectionTransformState {
+    pub kind: super::types::ResizeHit,
+    pub start_pointer: LogicalPoint,
+    pub original_selection: Rect,
+    pub original_layers: Vec<super::editor::Layer>,
+}
+
 pub struct Engine {
     pub state: EngineState,
     pub event_bus: EventBus,
@@ -35,6 +42,7 @@ pub struct Engine {
     pub edit_drag_start: Option<LogicalPoint>,
     pub hovered_window: Option<super::types::DetectedWindow>,
     pub should_close: bool,
+    pub selection_transform: Option<SelectionTransformState>,
 }
 
 impl Engine {
@@ -62,6 +70,7 @@ impl Engine {
             edit_drag_start: None,
             hovered_window: None,
             should_close: false,
+            selection_transform: None,
         }
     }
 
@@ -225,6 +234,58 @@ impl Engine {
                 }
             }
             self.edit_drag_start = None;
+        }
+    }
+
+    pub fn on_selection_transform_start(
+        &mut self, pos: LogicalPoint, kind: super::types::ResizeHit) {
+        if let EngineState::Editing = self.state {
+            if let Some(sel) = self.editor.selection {
+                self.selection_transform = Some(SelectionTransformState {
+                    kind,
+                    start_pointer: pos,
+                    original_selection: sel,
+                    original_layers: self.editor.layers.clone(),
+                });
+                self.editor.clear_preview();
+            }
+        }
+    }
+
+    pub fn on_selection_transform_drag(&mut self, pos: LogicalPoint) {
+        if let (EngineState::Editing, Some(ref state)) =
+            (&self.state, self.selection_transform.as_ref())
+        {
+            let delta = LogicalPoint::new(
+                pos.x - state.start_pointer.x,
+                pos.y - state.start_pointer.y,
+            );
+            let (new_rect, new_layers) = EditorState::transform_selection(
+                state.original_selection,
+                &state.original_layers,
+                &state.kind,
+                delta,
+            );
+            self.editor.selection = Some(new_rect);
+            self.editor.layers = new_layers;
+        }
+    }
+
+    pub fn on_selection_transform_end(&mut self, _pos: LogicalPoint) {
+        if let (EngineState::Editing, Some(state)) =
+            (&self.state, self.selection_transform.take())
+        {
+            if self.editor.selection != Some(state.original_selection)
+                || self.editor.layers != state.original_layers
+            {
+                self.editor.undo_stack.push(super::editor::LayerOp::UpdateSelectionAndLayers {
+                    old_selection: Some(state.original_selection),
+                    new_selection: self.editor.selection,
+                    old_layers: state.original_layers,
+                    new_layers: self.editor.layers.clone(),
+                });
+                self.editor.redo_stack.clear();
+            }
         }
     }
 
@@ -604,5 +665,53 @@ mod tests {
         assert!(matches!(engine.state, EngineState::Editing));
         assert_eq!(engine.editor.selection, Some(Rect::new(0.0, 0.0, 500.0, 500.0)));
         assert!(engine.event_bus.try_recv().is_none());
+    }
+
+    #[test]
+    fn selection_transform_end_creates_undo_record() {
+        let mut engine = Engine::new(
+            "/tmp/test.png".into(),
+            "png".into(),
+            90,
+            Color::new(255, 0, 0, 255),
+            3.0,
+            8.0,
+        );
+        engine.state = EngineState::Editing;
+        engine.editor.selection = Some(Rect::new(0.0, 0.0, 100.0, 100.0));
+        engine.editor.layers = vec![crate::core::editor::Layer::ShapeRect {
+            id: "r1".into(),
+            rect: Rect::new(10.0, 10.0, 20.0, 20.0),
+            stroke_width: 2.0,
+            color: Color::new(255, 0, 0, 255),
+        }];
+
+        use crate::core::types::ResizeHit;
+        engine.on_selection_transform_start(LogicalPoint::new(0.0, 0.0), ResizeHit::Move);
+        engine.on_selection_transform_drag(LogicalPoint::new(50.0, 30.0));
+        engine.on_selection_transform_end(LogicalPoint::new(50.0, 30.0));
+
+        assert_eq!(engine.editor.selection, Some(Rect::new(50.0, 30.0, 100.0, 100.0)));
+        assert!(!engine.editor.undo_stack.is_empty());
+    }
+
+    #[test]
+    fn selection_transform_no_move_does_not_create_undo() {
+        let mut engine = Engine::new(
+            "/tmp/test.png".into(),
+            "png".into(),
+            90,
+            Color::new(255, 0, 0, 255),
+            3.0,
+            8.0,
+        );
+        engine.state = EngineState::Editing;
+        engine.editor.selection = Some(Rect::new(0.0, 0.0, 100.0, 100.0));
+
+        use crate::core::types::ResizeHit;
+        engine.on_selection_transform_start(LogicalPoint::new(0.0, 0.0), ResizeHit::Move);
+        engine.on_selection_transform_end(LogicalPoint::new(0.0, 0.0));
+
+        assert!(engine.editor.undo_stack.is_empty());
     }
 }
