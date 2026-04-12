@@ -4,10 +4,6 @@ use crate::core::types::{LogicalPoint, Rect};
 use image::{ImageFormat, Rgba, RgbaImage};
 use std::path::Path;
 
-fn intersect_rects(a: Rect, b: Rect) -> Option<Rect> {
-    a.intersection(b)
-}
-
 fn global_to_local(r: Rect, bounds: Rect) -> Rect {
     Rect::new(r.x - bounds.x, r.y - bounds.y, r.w, r.h)
 }
@@ -40,7 +36,7 @@ pub fn composite_image(frames: &[ScreenFrame], editor: &EditorState) -> Result<R
         let mut max_x = f64::MIN;
         let mut max_y = f64::MIN;
         for frame in &intersecting {
-            if let Some(clip) = intersect_rects(selection, frame.logical_bounds) {
+            if let Some(clip) = selection.intersection(frame.logical_bounds) {
                 min_x = min_x.min(clip.x);
                 min_y = min_y.min(clip.y);
                 max_x = max_x.max(clip.x + clip.w);
@@ -55,18 +51,34 @@ pub fn composite_image(frames: &[ScreenFrame], editor: &EditorState) -> Result<R
     let mut output = RgbaImage::new(out_w, out_h);
 
     for frame in intersecting {
-        let Some(overlap) = intersect_rects(selection, frame.logical_bounds) else {
+        let Some(overlap) = selection.intersection(frame.logical_bounds) else {
             continue;
         };
         let local_logical = global_to_local(overlap, frame.logical_bounds);
         let physical = crate::core::dpi::rect_logical_to_physical(local_logical, frame.dpi_scale);
-        let x = physical.x.max(0.0) as u32;
-        let y = physical.y.max(0.0) as u32;
-        let w = physical.w.max(0.0) as u32;
-        let h = physical.h.max(0.0) as u32;
+        let mut x = physical.x.max(0.0) as u32;
+        let mut y = physical.y.max(0.0) as u32;
+        let mut w = physical.w.max(0.0) as u32;
+        let mut h = physical.h.max(0.0) as u32;
 
-        if x + w > frame.image.width() || y + h > frame.image.height() {
-            return Err("Selection out of bounds".into());
+        // Clamp to source image bounds instead of erroring.
+        let img_w = frame.image.width();
+        let img_h = frame.image.height();
+        if x > img_w {
+            x = img_w;
+        }
+        if y > img_h {
+            y = img_h;
+        }
+        if x + w > img_w {
+            w = img_w - x;
+        }
+        if y + h > img_h {
+            h = img_h - y;
+        }
+
+        if w == 0 || h == 0 {
+            continue;
         }
 
         let cropped = image::imageops::crop_imm(&frame.image, x, y, w, h).to_image();
@@ -126,16 +138,47 @@ pub fn composite_and_save(
     Ok(path.to_string_lossy().to_string())
 }
 
-fn apply_mosaic(img: &mut RgbaImage, _points: &[LogicalPoint], block_size: f32, scale: f64) {
+fn apply_mosaic(img: &mut RgbaImage, points: &[LogicalPoint], block_size: f32, scale: f64) {
+    if points.is_empty() {
+        return;
+    }
     let bs = (block_size * scale as f32) as u32;
     if bs == 0 {
         return;
     }
-    let (w, h) = (img.width(), img.height());
-    for by in (0..h).step_by(bs as usize) {
-        for bx in (0..w).step_by(bs as usize) {
-            let end_x = (bx + bs).min(w);
-            let end_y = (by + bs).min(h);
+
+    // Compute bounding box of the brush path in logical space,
+    // then convert to physical pixels on the composite image.
+    let mut min_x = points[0].x;
+    let mut min_y = points[0].y;
+    let mut max_x = points[0].x;
+    let mut max_y = points[0].y;
+    for p in &points[1..] {
+        min_x = min_x.min(p.x);
+        min_y = min_y.min(p.y);
+        max_x = max_x.max(p.x);
+        max_y = max_y.max(p.y);
+    }
+    // Add a small margin so stroke edges are covered.
+    let margin = block_size as f64;
+    let path_bounds_logical = Rect::new(
+        min_x - margin,
+        min_y - margin,
+        (max_x - min_x) + margin * 2.0,
+        (max_y - min_y) + margin * 2.0,
+    );
+    let path_bounds = crate::core::dpi::rect_logical_to_physical(path_bounds_logical, scale);
+
+    let (img_w, img_h) = (img.width(), img.height());
+    let bounds_x = path_bounds.x.max(0.0) as u32;
+    let bounds_y = path_bounds.y.max(0.0) as u32;
+    let bounds_x2 = (path_bounds.x + path_bounds.w).min(img_w as f64) as u32;
+    let bounds_y2 = (path_bounds.y + path_bounds.h).min(img_h as f64) as u32;
+
+    for by in (bounds_y..bounds_y2).step_by(bs as usize) {
+        for bx in (bounds_x..bounds_x2).step_by(bs as usize) {
+            let end_x = (bx + bs).min(bounds_x2);
+            let end_y = (by + bs).min(bounds_y2);
             let mut r = 0u32;
             let mut g = 0u32;
             let mut b = 0u32;

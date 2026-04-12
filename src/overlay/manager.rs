@@ -44,6 +44,13 @@ struct WindowState {
     last_egui_paint_ms: f64,
 }
 
+impl Drop for WindowState {
+    fn drop(&mut self) {
+        let _ = self.gl_context.make_current();
+        self.painter.destroy();
+    }
+}
+
 struct MultiWindowApp {
     engine: Arc<Mutex<Engine>>,
     windows: HashMap<winit::window::WindowId, WindowState>,
@@ -63,48 +70,72 @@ impl MultiWindowApp {
         }
     }
 
-    fn active_window_id(&self) -> Option<winit::window::WindowId> {
-        let engine = self.engine.lock().unwrap();
-        match engine.state {
-            crate::core::engine::EngineState::Editing => {
-                engine.editor.selection.and_then(|sel| {
-                    let cx = sel.x + sel.w / 2.0;
-                    let cy = sel.y + sel.h / 2.0;
-                    self.windows.iter().find(|(_, ws)| {
-                        ws.screen_bounds
-                            .contains(LogicalPoint::new(cx, cy))
-                    }).map(|(id, _)| *id)
-                })
-            }
-            _ => None,
+    fn interactive_window_ids(&self, selection: Rect) -> std::collections::HashSet<winit::window::WindowId> {
+        self.windows
+            .iter()
+            .filter(|(_, ws)| ws.screen_bounds.intersects(selection))
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    fn toolbar_window_id(&self, selection: Rect) -> Option<winit::window::WindowId> {
+        let cx = selection.x + selection.w / 2.0;
+        let cy = selection.y + selection.h / 2.0;
+        self.windows
+            .iter()
+            .find(|(_, ws)| ws.screen_bounds.contains(LogicalPoint::new(cx, cy)))
+            .map(|(id, _)| *id)
+    }
+
+    fn set_window_interactivity(&mut self, window_id: winit::window::WindowId, ignores: bool) {
+        let Some(ws) = self.windows.get_mut(&window_id) else {
+            return;
+        };
+        if ignores == ws.ignores_mouse_events {
+            return;
         }
+        #[cfg(target_os = "macos")]
+        unsafe {
+            use objc::msg_send;
+            use objc::sel;
+            use objc::sel_impl;
+            use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+            use objc::runtime::Object;
+            if let Ok(handle) = ws.window.window_handle() {
+                if let RawWindowHandle::AppKit(appkit) = handle.as_raw() {
+                    let ns_view: *mut Object = appkit.ns_view.as_ptr() as *mut Object;
+                    let ns_window: *mut Object = msg_send![ns_view, window];
+                    if !ns_window.is_null() {
+                        let _: () = msg_send![ns_window, setIgnoresMouseEvents: ignores];
+                    }
+                }
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = ignores;
+        }
+        ws.ignores_mouse_events = ignores;
     }
 
     fn update_interactivity(&mut self) {
-        let active_id = self.active_window_id();
-
-        for (id, ws) in self.windows.iter_mut() {
-            let should_ignore = active_id.map(|a| a != *id).unwrap_or(false);
-            if should_ignore != ws.ignores_mouse_events {
-                #[cfg(target_os = "macos")]
-                unsafe {
-                    use objc::msg_send;
-                    use objc::sel;
-                    use objc::sel_impl;
-                    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-                    use objc::runtime::Object;
-                    if let Ok(handle) = ws.window.window_handle() {
-                        if let RawWindowHandle::AppKit(appkit) = handle.as_raw() {
-                            let ns_view: *mut Object = appkit.ns_view.as_ptr() as *mut Object;
-                            let ns_window: *mut Object = msg_send![ns_view, window];
-                            if !ns_window.is_null() {
-                                let _: () = msg_send![ns_window, setIgnoresMouseEvents: should_ignore];
-                            }
-                        }
-                    }
-                }
-                ws.ignores_mouse_events = should_ignore;
+        let selection_opt = {
+            let engine = self.engine.lock().unwrap();
+            match engine.state {
+                crate::core::engine::EngineState::Editing => engine.editor.selection,
+                _ => None,
             }
+        };
+
+        let interactive_ids: std::collections::HashSet<winit::window::WindowId> = match selection_opt {
+            Some(sel) => self.interactive_window_ids(sel),
+            None => self.windows.keys().copied().collect(),
+        };
+
+        let all_ids: Vec<winit::window::WindowId> = self.windows.keys().copied().collect();
+        for id in all_ids {
+            let should_ignore = !interactive_ids.contains(&id);
+            self.set_window_interactivity(id, should_ignore);
         }
     }
 }
@@ -129,7 +160,13 @@ impl ApplicationHandler for MultiWindowApp {
                 .with_transparent(true)
                 .with_resizable(false);
 
-            let window = event_loop.create_window(window_attributes).unwrap();
+            let window = match event_loop.create_window(window_attributes) {
+                Ok(w) => w,
+                Err(e) => {
+                    eprintln!("[overlay] failed to create window for screen {}: {}", frame.screen_id, e);
+                    continue;
+                }
+            };
 
             #[cfg(target_os = "macos")]
             unsafe {
@@ -156,7 +193,13 @@ impl ApplicationHandler for MultiWindowApp {
                 }
             }
 
-            let gl = unsafe { GlContext::new(&window, event_loop) };
+            let gl = match unsafe { GlContext::new(&window, event_loop) } {
+                Ok(gl) => gl,
+                Err(e) => {
+                    eprintln!("[overlay] failed to create GL context for screen {}: {}", frame.screen_id, e);
+                    continue;
+                }
+            };
             let egui_ctx = egui::Context::default();
             let egui_state = EguiState::new(
                 egui_ctx.clone(),
@@ -172,8 +215,13 @@ impl ApplicationHandler for MultiWindowApp {
             let mut screenshot_app = ScreenshotApp::new(Arc::clone(&self.engine), engine_frames);
             screenshot_app.load_screenshot_textures(&egui_ctx);
 
-            let painter = egui_glow::Painter::new(gl.gl.clone(), "", None, true)
-                .expect("Failed to create egui_glow Painter");
+            let painter = match egui_glow::Painter::new(gl.gl.clone(), "", None, true) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("[overlay] failed to create egui painter for screen {}: {}", frame.screen_id, e);
+                    continue;
+                }
+            };
 
             let ws = WindowState {
                 window,
@@ -191,6 +239,12 @@ impl ApplicationHandler for MultiWindowApp {
             };
             let id = ws.window.id();
             self.windows.insert(id, ws);
+        }
+
+        if self.windows.is_empty() {
+            eprintln!("[overlay] no windows could be created, exiting");
+            event_loop.exit();
+            return;
         }
 
         self.start_time = Some(std::time::Instant::now());
@@ -221,7 +275,16 @@ impl ApplicationHandler for MultiWindowApp {
             return;
         }
 
-        let show_toolbar = self.active_window_id() == Some(window_id);
+        let show_toolbar = {
+            let engine = self.engine.lock().unwrap();
+            if let (crate::core::engine::EngineState::Editing, Some(sel)) =
+                (&engine.state, engine.editor.selection)
+            {
+                self.toolbar_window_id(sel) == Some(window_id)
+            } else {
+                false
+            }
+        };
 
         let Some(ws) = self.windows.get_mut(&window_id) else {
             return;
@@ -247,8 +310,7 @@ impl ApplicationHandler for MultiWindowApp {
                 if event.logical_key
                     == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Enter)
                 {
-                    let frames = &ws.screenshot_app.frames;
-                    self.engine.lock().unwrap().save(frames);
+                    self.engine.lock().unwrap().save();
                 }
 
                 // Undo / Redo
@@ -275,8 +337,7 @@ impl ApplicationHandler for MultiWindowApp {
                             let key = c.as_str();
                             match key {
                                 "c" | "C" => {
-                                    let frames = &ws.screenshot_app.frames;
-                                    engine.copy_to_clipboard(frames);
+                                    engine.copy_to_clipboard();
                                 }
                                 "1" => engine.editor.active_tool = crate::core::editor::Tool::Rect,
                                 "2" => {
@@ -295,7 +356,10 @@ impl ApplicationHandler for MultiWindowApp {
                 }
             }
             WindowEvent::RedrawRequested => {
-                ws.gl_context.make_current();
+                if let Err(e) = ws.gl_context.make_current() {
+                    eprintln!("[overlay] make_current failed for window {:?}: {}", window_id, e);
+                    return;
+                }
                 let frame_start = std::time::Instant::now();
                 let size = ws.window.inner_size();
                 ws.gl_context.resize(size.width, size.height);
@@ -374,10 +438,7 @@ impl ApplicationHandler for MultiWindowApp {
                             engine.on_mouse_drag(end_pt);
                             engine.on_mouse_up(end_pt);
                             if std::env::var("SCREENSHOT_TEST_MOCK_DRAG_NO_SAVE").is_err() {
-                                if let Some(ws) = self.windows.values().next() {
-                                    let frames = &ws.screenshot_app.frames;
-                                    engine.save(frames);
-                                }
+                                engine.save();
                             }
                             self.mock_drag_done = true;
                         }

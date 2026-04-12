@@ -95,6 +95,19 @@ impl PlatformCapture for MacOsCgCapture {
             // user-visible orientation (matches logical bounds), so no explicit
             // rotation is needed even for portrait displays.
 
+            // Sanity-check aspect ratio to catch unexpected rotation behavior.
+            if width > 0.0 && height > 0.0 {
+                let logical_aspect = width / height;
+                let image_aspect = rgba.width() as f64 / rgba.height() as f64;
+                let aspect_diff = (logical_aspect - image_aspect).abs();
+                if aspect_diff > 0.05 * logical_aspect.max(image_aspect) {
+                    eprintln!(
+                        "[capture_cg] display {}: WARNING aspect mismatch logical={:.3} image={:.3} rotation={:.0}. CGDisplayCreateImage may not be pre-rotated.",
+                        id, logical_aspect, image_aspect, rotation
+                    );
+                }
+            }
+
             frames.push(ScreenFrame {
                 screen_id: id.to_string(),
                 logical_bounds: Rect::new(

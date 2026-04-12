@@ -12,7 +12,7 @@ impl Rect {
     }
 
     pub fn contains(&self, p: LogicalPoint) -> bool {
-        p.x >= self.x && p.x <= self.x + self.w && p.y >= self.y && p.y <= self.y + self.h
+        p.x >= self.x && p.x < self.x + self.w && p.y >= self.y && p.y < self.y + self.h
     }
 
     pub fn area(&self) -> f64 {

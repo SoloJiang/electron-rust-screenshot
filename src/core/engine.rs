@@ -113,10 +113,10 @@ impl Engine {
         }
     }
 
-    pub fn save(&mut self, frames: &[ScreenFrame]) {
+    pub fn save(&mut self) {
         self.state = EngineState::Saving;
         match composite_and_save(
-            frames,
+            &self.frames,
             &self.editor,
             &self.save_path,
             &self.format,
@@ -139,10 +139,10 @@ impl Engine {
         self.should_close = true;
     }
 
-    pub fn copy_to_clipboard(&mut self, frames: &[ScreenFrame]) {
+    pub fn copy_to_clipboard(&mut self) {
         #[cfg(target_os = "macos")]
         {
-            match crate::overlay::save::composite_image(frames, &self.editor) {
+            match crate::overlay::save::composite_image(&self.frames, &self.editor) {
                 Ok(img) => match crate::platform::macos::clipboard::copy_image_to_clipboard(&img) {
                     Ok(()) => {
                         self.event_bus.emit(EngineEvent::Saved {
@@ -167,7 +167,6 @@ impl Engine {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = frames;
             self.event_bus.emit(EngineEvent::Error {
                 code: ErrorCode::SaveFailed,
                 message: "Clipboard not supported on this platform".into(),
@@ -430,7 +429,7 @@ mod tests {
             3.0,
             8.0,
         );
-        engine.copy_to_clipboard(&[]);
+        engine.copy_to_clipboard();
         let event = engine.event_bus.try_recv();
         assert!(matches!(
             event,

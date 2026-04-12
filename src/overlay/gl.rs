@@ -18,8 +18,13 @@ pub struct GlContext {
 impl GlContext {
     /// # Safety
     /// Must be called on the main thread with a valid active window and event loop.
-    pub unsafe fn new(window: &Window, event_loop: &winit::event_loop::ActiveEventLoop) -> Self {
-        let window_handle = window.window_handle().unwrap();
+    pub unsafe fn new(
+        window: &Window,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+    ) -> Result<Self, String> {
+        let window_handle = window
+            .window_handle()
+            .map_err(|e| format!("window_handle failed: {e}"))?;
 
         let gl_config = glutin_winit::DisplayBuilder::new()
             .with_preference(glutin_winit::ApiPreference::FallbackEgl)
@@ -34,38 +39,38 @@ impl GlContext {
                     })
                     .unwrap()
             })
-            .unwrap()
+            .map_err(|e| format!("DisplayBuilder failed: {e}"))?
             .1;
 
         let gl_display = gl_config.display();
 
         let surface_attrs = window
             .build_surface_attributes(SurfaceAttributesBuilder::<WindowSurface>::default())
-            .unwrap();
+            .map_err(|e| format!("build_surface_attributes failed: {e}"))?;
         let gl_surface = unsafe {
             gl_display
                 .create_window_surface(&gl_config, &surface_attrs)
-                .unwrap()
+                .map_err(|e| format!("create_window_surface failed: {e}"))?
         };
 
         let context_attributes = ContextAttributesBuilder::new().build(Some(window_handle.into()));
         let gl_context = unsafe {
             gl_display
                 .create_context(&gl_config, &context_attributes)
-                .unwrap()
+                .map_err(|e| format!("create_context failed: {e}"))?
                 .make_current(&gl_surface)
-                .unwrap()
+                .map_err(|e| format!("make_current failed: {e}"))?
         };
 
         let gl = Arc::new(glow::Context::from_loader_function(|s| {
             gl_display.get_proc_address(&std::ffi::CString::new(s).unwrap())
         }));
 
-        Self {
+        Ok(Self {
             gl_context,
             gl_surface,
             gl,
-        }
+        })
     }
 
     pub fn resize(&self, width: u32, height: u32) {
@@ -77,10 +82,10 @@ impl GlContext {
     }
 
     pub fn swap_buffers(&self) {
-        self.gl_surface.swap_buffers(&self.gl_context).unwrap();
+        let _ = self.gl_surface.swap_buffers(&self.gl_context);
     }
 
-    pub fn make_current(&self) {
-        let _ = self.gl_context.make_current(&self.gl_surface);
+    pub fn make_current(&self) -> Result<(), glutin::error::Error> {
+        self.gl_context.make_current(&self.gl_surface)
     }
 }

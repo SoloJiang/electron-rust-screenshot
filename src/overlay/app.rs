@@ -193,8 +193,7 @@ impl ScreenshotApp {
                                 .and_then(|r| r.inner)
                                 .unwrap_or(false);
                             if save_clicked {
-                                let frames = &self.frames;
-                                engine.save(frames);
+                                engine.save();
                             }
                         }
                     }
