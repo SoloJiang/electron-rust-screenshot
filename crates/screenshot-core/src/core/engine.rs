@@ -519,4 +519,90 @@ mod tests {
         engine.on_mouse_up(LogicalPoint::new(100.0, 100.0));
         assert!(matches!(engine.state, EngineState::Editing));
     }
+
+    #[test]
+    fn select_hovered_window_enters_editing() {
+        let mut engine = Engine::new(
+            "/tmp/test.png".into(),
+            "png".into(),
+            90,
+            Color::new(255, 0, 0, 255),
+            3.0,
+            8.0,
+        );
+        engine.state = EngineState::OverlayRunning;
+        engine.screens = vec![
+            ScreenInfo {
+                id: "main".into(),
+                name: "Main".into(),
+                logical_bounds: Rect::new(0.0, 0.0, 1920.0, 1080.0),
+                dpi_scale: 1.0,
+            },
+        ];
+        let window = DetectedWindow {
+            id: "w1".into(),
+            title: "Test Window".into(),
+            bounds: Rect::new(100.0, 100.0, 400.0, 300.0),
+            owner_pid: 42,
+            z_order: 1,
+        };
+        engine.hovered_window = Some(window.clone());
+
+        engine.select_hovered_window();
+
+        assert!(matches!(engine.state, EngineState::Editing));
+        assert_eq!(engine.editor.selection, Some(window.bounds));
+        let event = engine.event_bus.try_recv();
+        assert!(
+            matches!(event, Some(EngineEvent::RegionSelected { screen_id, rect }) if screen_id == "main" && rect == window.bounds)
+        );
+    }
+
+    #[test]
+    fn select_hovered_window_noop_without_hover() {
+        let mut engine = Engine::new(
+            "/tmp/test.png".into(),
+            "png".into(),
+            90,
+            Color::new(255, 0, 0, 255),
+            3.0,
+            8.0,
+        );
+        engine.state = EngineState::OverlayRunning;
+        engine.hovered_window = None;
+
+        engine.select_hovered_window();
+
+        assert!(matches!(engine.state, EngineState::OverlayRunning));
+        assert!(engine.editor.selection.is_none());
+        assert!(engine.event_bus.try_recv().is_none());
+    }
+
+    #[test]
+    fn select_hovered_window_noop_in_editing() {
+        let mut engine = Engine::new(
+            "/tmp/test.png".into(),
+            "png".into(),
+            90,
+            Color::new(255, 0, 0, 255),
+            3.0,
+            8.0,
+        );
+        engine.state = EngineState::Editing;
+        engine.editor.selection = Some(Rect::new(0.0, 0.0, 500.0, 500.0));
+        let window = DetectedWindow {
+            id: "w1".into(),
+            title: "Test Window".into(),
+            bounds: Rect::new(100.0, 100.0, 400.0, 300.0),
+            owner_pid: 42,
+            z_order: 1,
+        };
+        engine.hovered_window = Some(window);
+
+        engine.select_hovered_window();
+
+        assert!(matches!(engine.state, EngineState::Editing));
+        assert_eq!(engine.editor.selection, Some(Rect::new(0.0, 0.0, 500.0, 500.0)));
+        assert!(engine.event_bus.try_recv().is_none());
+    }
 }
