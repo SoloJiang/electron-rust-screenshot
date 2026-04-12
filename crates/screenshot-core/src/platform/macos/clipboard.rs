@@ -1,3 +1,6 @@
+#![allow(deprecated)]
+#![allow(unexpected_cfgs)]
+
 use cocoa::appkit::NSPasteboard;
 use cocoa::base::nil;
 use cocoa::foundation::NSData;

@@ -1,4 +1,5 @@
 #![deny(clippy::all)]
+#![allow(unexpected_cfgs)]
 
 pub mod core;
 pub mod overlay;

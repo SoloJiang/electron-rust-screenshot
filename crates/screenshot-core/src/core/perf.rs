@@ -4,7 +4,6 @@ use std::time::Instant;
 
 pub struct PerformanceMonitor {
     hit_test_times: VecDeque<f64>,
-    last_memory_read: Option<Instant>,
 }
 
 impl Default for PerformanceMonitor {
@@ -17,7 +16,6 @@ impl PerformanceMonitor {
     pub fn new() -> Self {
         Self {
             hit_test_times: VecDeque::with_capacity(16),
-            last_memory_read: None,
         }
     }
 

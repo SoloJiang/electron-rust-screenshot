@@ -1,3 +1,5 @@
+#![allow(unexpected_cfgs)]
+
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::Window;
 
