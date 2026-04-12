@@ -144,8 +144,75 @@ impl ScreenshotApp {
                         });
                         let resize_hit = logical_pos.and_then(|p| sel.hit_test_resize_handle(p, 8.0));
 
+                        let in_selection = logical_pos.map(|p| sel.contains(p)).unwrap_or(true);
+                        let in_transform_zone = resize_hit.is_some();
+
+                        // Event routing
+                        if engine.selection_transform.is_some() {
+                            if pointer.is_decidedly_dragging() {
+                                if let Some(pos) = logical_pos {
+                                    engine.on_selection_transform_drag(pos);
+                                }
+                            }
+                            if pointer.any_released() {
+                                if let Some(pos) = logical_pos {
+                                    engine.on_selection_transform_end(pos);
+                                }
+                            }
+                        } else if in_selection || in_transform_zone {
+                            if pointer.any_pressed() {
+                                if let Some(pos) = logical_pos {
+                                    match resize_hit {
+                                        Some(ResizeHit::Move) => {
+                                            engine.on_edit_mouse_down(pos);
+                                        }
+                                        Some(hit) => {
+                                            engine.on_selection_transform_start(pos, hit);
+                                        }
+                                        None => {
+                                            if sel.contains(pos) {
+                                                engine.on_edit_mouse_down(pos);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if pointer.is_decidedly_dragging() {
+                                if let Some(pos) = logical_pos {
+                                    let is_move_zone = resize_hit == Some(ResizeHit::Move);
+                                    if engine.edit_drag_start.is_some() && is_move_zone {
+                                        engine.abort_edit_drag();
+                                        engine.on_selection_transform_start(pos, ResizeHit::Move);
+                                    } else {
+                                        engine.on_edit_mouse_drag(pos);
+                                    }
+                                }
+                            }
+                            if pointer.any_released() {
+                                if let Some(pos) = logical_pos {
+                                    engine.on_edit_mouse_up(pos);
+                                }
+                            }
+                        }
+
                         // Cursor feedback
-                        if let Some(hit) = resize_hit {
+                        if let Some(ref state) = engine.selection_transform {
+                            ui.ctx().set_cursor_icon(match state.kind {
+                                ResizeHit::Move => egui::CursorIcon::Move,
+                                ResizeHit::ResizeEdge { edge: Edge::North | Edge::South } => {
+                                    egui::CursorIcon::ResizeVertical
+                                }
+                                ResizeHit::ResizeEdge { edge: Edge::East | Edge::West } => {
+                                    egui::CursorIcon::ResizeHorizontal
+                                }
+                                ResizeHit::ResizeCorner { corner: Corner::NW | Corner::SE } => {
+                                    egui::CursorIcon::ResizeNwSe
+                                }
+                                ResizeHit::ResizeCorner { corner: Corner::NE | Corner::SW } => {
+                                    egui::CursorIcon::ResizeNeSw
+                                }
+                            });
+                        } else if let Some(hit) = resize_hit {
                             ui.ctx().set_cursor_icon(match hit {
                                 ResizeHit::Move => egui::CursorIcon::Move,
                                 ResizeHit::ResizeEdge { edge: Edge::North | Edge::South } => {
@@ -163,43 +230,6 @@ impl ScreenshotApp {
                             });
                         } else {
                             ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
-                        }
-
-                        let in_selection = logical_pos.map(|p| sel.contains(p)).unwrap_or(true);
-                        let in_transform_zone = resize_hit.is_some();
-
-                        // Event routing: if we are already transforming, continue it
-                        if engine.selection_transform.is_some() {
-                            if pointer.is_decidedly_dragging() {
-                                if let Some(pos) = logical_pos {
-                                    engine.on_selection_transform_drag(pos);
-                                }
-                            }
-                            if pointer.any_released() {
-                                if let Some(pos) = logical_pos {
-                                    engine.on_selection_transform_end(pos);
-                                }
-                            }
-                        } else if in_selection || in_transform_zone {
-                            if pointer.any_pressed() {
-                                if let Some(pos) = logical_pos {
-                                    if let Some(hit) = resize_hit {
-                                        engine.on_selection_transform_start(pos, hit);
-                                    } else if sel.contains(pos) {
-                                        engine.on_edit_mouse_down(pos);
-                                    }
-                                }
-                            }
-                            if pointer.is_decidedly_dragging() {
-                                if let Some(pos) = logical_pos {
-                                    engine.on_edit_mouse_drag(pos);
-                                }
-                            }
-                            if pointer.any_released() {
-                                if let Some(pos) = logical_pos {
-                                    engine.on_edit_mouse_up(pos);
-                                }
-                            }
                         }
 
                         // Uniform mask over entire screen

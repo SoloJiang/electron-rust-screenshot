@@ -240,6 +240,13 @@ impl Engine {
         }
     }
 
+    pub fn abort_edit_drag(&mut self) {
+        if matches!(self.state, EngineState::Editing) {
+            self.edit_drag_start = None;
+            self.editor.clear_preview();
+        }
+    }
+
     pub fn on_selection_transform_start(
         &mut self, pos: LogicalPoint, kind: super::types::ResizeHit) {
         if let EngineState::Editing = self.state {
