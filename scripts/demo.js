@@ -1,4 +1,4 @@
-const { start } = require('./lib.js');
+const { start } = require('../dist/lib.js');
 
 const args = process.argv.slice(2);
 const mode = args[0] || 'interactive';
@@ -34,7 +34,8 @@ console.log('Mode:', mode);
 console.log('Config:', JSON.stringify(config, null, 2));
 console.log('\nControls:');
 console.log('  Mouse drag     - Select region / draw shape');
-console.log('  Mouse move     - Window hover highlight (yellow border)');
+console.log('  Mouse move     - Window hover highlight (blue border)');
+console.log('  Mouse double-click - Select hovered window directly');
 console.log('  1-6            - Switch tool (Rect/Ellipse/Arrow/Brush/Mosaic/Text)');
 console.log('  Cmd+Z          - Undo');
 console.log('  Cmd+Shift+Z    - Redo');
