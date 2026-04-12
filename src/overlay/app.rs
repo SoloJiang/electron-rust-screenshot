@@ -9,16 +9,14 @@ pub struct ScreenshotApp {
     pub engine: Arc<Mutex<Engine>>,
     pub frame_textures: Vec<Option<egui::TextureHandle>>,
     pub frames: Vec<ScreenFrame>,
-    pub window_offset: LogicalPoint,
 }
 
 impl ScreenshotApp {
-    pub fn new(engine: Arc<Mutex<Engine>>, frames: Vec<ScreenFrame>, window_offset: LogicalPoint) -> Self {
+    pub fn new(engine: Arc<Mutex<Engine>>, frames: Vec<ScreenFrame>) -> Self {
         Self {
             engine,
             frame_textures: vec![None; frames.len()],
             frames,
-            window_offset,
         }
     }
 
@@ -37,8 +35,7 @@ impl ScreenshotApp {
         }
     }
 
-    fn draw_screenshot_textures(&self, painter: &egui::Painter) {
-        let offset = self.window_offset;
+    fn draw_screenshot_textures(&self, painter: &egui::Painter, offset: LogicalPoint) {
         for (frame, tex_opt) in self.frames.iter().zip(self.frame_textures.iter()) {
             if let Some(tex) = tex_opt {
                 let b = frame.logical_bounds;
@@ -56,32 +53,31 @@ impl ScreenshotApp {
         }
     }
 
-    fn draw_unmasked_region(&self, painter: &egui::Painter, region: Rect) {
-        let offset = self.window_offset;
+    fn draw_unmasked_region(&self, painter: &egui::Painter, region: Rect, offset: LogicalPoint) {
         let clip = egui::Rect::from_min_max(
             egui::pos2((region.x - offset.x) as f32, (region.y - offset.y) as f32),
             egui::pos2((region.x + region.w - offset.x) as f32, (region.y + region.h - offset.y) as f32),
         );
         let clipped = painter.with_clip_rect(clip);
-        self.draw_screenshot_textures(&clipped);
+        self.draw_screenshot_textures(&clipped, offset);
     }
 
     pub fn update(
         &mut self,
         ctx: &egui::Context,
         _frame: &mut egui::Frame,
+        offset: LogicalPoint,
         frame_time_ms: f64,
         egui_paint_ms: f64,
     ) {
         let mut engine = self.engine.lock().unwrap();
-        let offset = self.window_offset;
 
         let panel = egui::CentralPanel::default().frame(egui::Frame::none());
         panel.show(ctx, |ui| {
             let rect = ui.available_rect_before_wrap();
 
             // 1. Draw background screenshot textures
-            self.draw_screenshot_textures(ui.painter());
+            self.draw_screenshot_textures(ui.painter(), offset);
 
             // 2. Handle mouse interaction based on engine state
             let pointer = ctx.input(|i| i.pointer.clone());
@@ -112,7 +108,7 @@ impl ScreenshotApp {
 
                     if let Some(win) = &engine.hovered_window {
                         // Unmask the hovered window so original screenshot shows through
-                        self.draw_unmasked_region(ui.painter(), win.bounds);
+                        self.draw_unmasked_region(ui.painter(), win.bounds, offset);
                         let r = egui_rect_from_logical(win.bounds, offset);
                         ui.painter().rect_stroke(
                             r,
@@ -130,7 +126,7 @@ impl ScreenshotApp {
                         (current.y - start.y).abs(),
                     );
                     // Unmask the selection area
-                    self.draw_unmasked_region(ui.painter(), sel);
+                    self.draw_unmasked_region(ui.painter(), sel, offset);
                     let s = egui::pos2((start.x - offset.x) as f32, (start.y - offset.y) as f32);
                     let c = egui::pos2((current.x - offset.x) as f32, (current.y - offset.y) as f32);
                     let r = EguiRect::from_two_pos(s, c);
@@ -162,7 +158,7 @@ impl ScreenshotApp {
 
                     if let Some(sel) = engine.editor.selection {
                         // Unmask the selected region
-                        self.draw_unmasked_region(ui.painter(), sel);
+                        self.draw_unmasked_region(ui.painter(), sel, offset);
                         // White selection border
                         let sel_rect = egui_rect_from_logical(sel, offset);
                         ui.painter().rect_stroke(

@@ -43,6 +43,7 @@ struct OverlayApp {
     mock_drag_done: bool,
     focus_attempts: u32,
     modifiers: winit::keyboard::ModifiersState,
+    window_offset: LogicalPoint,
 }
 
 impl OverlayApp {
@@ -62,6 +63,7 @@ impl OverlayApp {
             mock_drag_done: false,
             focus_attempts: 0,
             modifiers: winit::keyboard::ModifiersState::empty(),
+            window_offset: LogicalPoint::new(0.0, 0.0),
         }
     }
 }
@@ -129,11 +131,12 @@ impl ApplicationHandler for OverlayApp {
         );
         let frames = std::mem::take(&mut self._frames);
         let offset = LogicalPoint::new(rect.x, rect.y);
-        let mut app = ScreenshotApp::new(Arc::clone(&self.engine), frames, offset);
+        let mut app = ScreenshotApp::new(Arc::clone(&self.engine), frames);
         app.load_screenshot_textures(&egui_ctx);
         let painter = egui_glow::Painter::new(gl.gl.clone(), "", None, true)
             .expect("Failed to create egui_glow Painter");
 
+        self.window_offset = offset;
         self.window = Some(window);
         self.gl_context = Some(gl);
         self.egui_ctx = Some(egui_ctx);
@@ -260,6 +263,7 @@ impl ApplicationHandler for OverlayApp {
                     app.update(
                         ctx,
                         &mut egui::Frame::none(),
+                        self.window_offset,
                         self.last_frame_time_ms,
                         self.last_egui_paint_ms,
                     );
