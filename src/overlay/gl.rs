@@ -16,26 +16,24 @@ pub struct GlContext {
 }
 
 impl GlContext {
+    /// # Safety
+    /// Must be called on the main thread with a valid active window and event loop.
     pub unsafe fn new(window: &Window, event_loop: &winit::event_loop::ActiveEventLoop) -> Self {
         let window_handle = window.window_handle().unwrap();
 
         let gl_config = glutin_winit::DisplayBuilder::new()
             .with_preference(glutin_winit::ApiPreference::FallbackEgl)
-            .build(
-                event_loop,
-                ConfigTemplateBuilder::new(),
-                |configs| {
-                    configs
-                        .reduce(|accum, config| {
-                            if config.num_samples() > accum.num_samples() {
-                                config
-                            } else {
-                                accum
-                            }
-                        })
-                        .unwrap()
-                },
-            )
+            .build(event_loop, ConfigTemplateBuilder::new(), |configs| {
+                configs
+                    .reduce(|accum, config| {
+                        if config.num_samples() > accum.num_samples() {
+                            config
+                        } else {
+                            accum
+                        }
+                    })
+                    .unwrap()
+            })
             .unwrap()
             .1;
 

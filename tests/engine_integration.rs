@@ -16,9 +16,15 @@ fn engine_cancel_after_start() {
     let cap = MockCapture::new(Rect::new(0.0, 0.0, 1920.0, 1080.0));
     engine.start(&cap);
     // Consume the Started event emitted by start()
-    assert!(matches!(engine.event_bus.try_recv(), Some(EngineEvent::Started { .. })));
+    assert!(matches!(
+        engine.event_bus.try_recv(),
+        Some(EngineEvent::Started { .. })
+    ));
     engine.cancel();
-    assert!(matches!(engine.state, electron_rust_screenshot::core::engine::EngineState::Idle));
+    assert!(matches!(
+        engine.state,
+        electron_rust_screenshot::core::engine::EngineState::Idle
+    ));
     let event = engine.event_bus.try_recv().unwrap();
     assert!(matches!(event, EngineEvent::Cancelled));
 }

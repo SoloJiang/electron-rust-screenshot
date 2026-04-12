@@ -18,6 +18,76 @@ impl Rect {
     pub fn area(&self) -> f64 {
         (self.w * self.h).max(0.0)
     }
+
+    pub fn contains_rect(&self, other: Rect) -> bool {
+        self.x <= other.x
+            && self.y <= other.y
+            && self.x + self.w >= other.x + other.w
+            && self.y + self.h >= other.y + other.h
+    }
+
+    pub fn intersects(&self, other: Rect) -> bool {
+        self.x < other.x + other.w
+            && self.x + self.w > other.x
+            && self.y < other.y + other.h
+            && self.y + self.h > other.y
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.w <= 0.0 || self.h <= 0.0
+    }
+}
+
+/// Subtract `cut` from `target`, returning the remaining non-overlapping rectangles.
+pub fn subtract_rect(target: Rect, cut: Rect) -> Vec<Rect> {
+    if !target.intersects(cut) {
+        return vec![target];
+    }
+    if cut.contains_rect(target) {
+        return vec![];
+    }
+
+    let mut result = Vec::new();
+
+    // Top strip
+    if cut.y > target.y {
+        result.push(Rect::new(target.x, target.y, target.w, cut.y - target.y));
+    }
+
+    // Bottom strip
+    if cut.y + cut.h < target.y + target.h {
+        result.push(Rect::new(
+            target.x,
+            cut.y + cut.h,
+            target.w,
+            target.y + target.h - (cut.y + cut.h),
+        ));
+    }
+
+    let y_overlap_top = target.y.max(cut.y);
+    let y_overlap_bottom = (target.y + target.h).min(cut.y + cut.h);
+
+    // Left strip (within the vertical overlap)
+    if cut.x > target.x && y_overlap_bottom > y_overlap_top {
+        result.push(Rect::new(
+            target.x,
+            y_overlap_top,
+            cut.x - target.x,
+            y_overlap_bottom - y_overlap_top,
+        ));
+    }
+
+    // Right strip (within the vertical overlap)
+    if cut.x + cut.w < target.x + target.w && y_overlap_bottom > y_overlap_top {
+        result.push(Rect::new(
+            cut.x + cut.w,
+            y_overlap_top,
+            target.x + target.w - (cut.x + cut.w),
+            y_overlap_bottom - y_overlap_top,
+        ));
+    }
+
+    result
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

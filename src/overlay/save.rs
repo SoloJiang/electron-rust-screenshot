@@ -4,26 +4,28 @@ use crate::core::types::LogicalPoint;
 use image::{ImageFormat, Rgba, RgbaImage};
 use std::path::Path;
 
-pub fn composite_and_save(
-    frames: &[ScreenFrame],
-    editor: &EditorState,
-    save_path: &str,
-    format: &str,
-    _quality: u8,
-) -> Result<String, String> {
+pub fn composite_image(frames: &[ScreenFrame], editor: &EditorState) -> Result<RgbaImage, String> {
     let selection = editor.selection.ok_or("No selection")?;
     let frame = frames
         .iter()
         .find(|f| {
-            f.logical_bounds.contains(LogicalPoint::new(selection.x, selection.y))
+            f.logical_bounds
+                .contains(LogicalPoint::new(selection.x, selection.y))
         })
         .ok_or("No frame for selection")?;
 
-    let physical_rect = crate::core::dpi::rect_logical_to_physical(selection, frame.dpi_scale);
-    let x = physical_rect.x as u32;
-    let y = physical_rect.y as u32;
-    let w = physical_rect.w as u32;
-    let h = physical_rect.h as u32;
+    // Convert global logical coordinates to screen-local logical coordinates before scaling.
+    let local_logical = crate::core::types::Rect::new(
+        selection.x - frame.logical_bounds.x,
+        selection.y - frame.logical_bounds.y,
+        selection.w,
+        selection.h,
+    );
+    let physical_rect = crate::core::dpi::rect_logical_to_physical(local_logical, frame.dpi_scale);
+    let x = physical_rect.x.max(0.0) as u32;
+    let y = physical_rect.y.max(0.0) as u32;
+    let w = physical_rect.w.max(0.0) as u32;
+    let h = physical_rect.h.max(0.0) as u32;
 
     let source = &frame.image;
     if x + w > source.width() || y + h > source.height() {
@@ -33,13 +35,25 @@ pub fn composite_and_save(
     let mut output = image::imageops::crop_imm(source, x, y, w, h).to_image();
 
     for layer in &editor.layers {
-        match layer {
-            Layer::MosaicPath { points, block_size, .. } => {
-                apply_mosaic(&mut output, points, *block_size, frame.dpi_scale);
-            }
-            _ => {}
+        if let Layer::MosaicPath {
+            points, block_size, ..
+        } = layer
+        {
+            apply_mosaic(&mut output, points, *block_size, frame.dpi_scale);
         }
     }
+
+    Ok(output)
+}
+
+pub fn composite_and_save(
+    frames: &[ScreenFrame],
+    editor: &EditorState,
+    save_path: &str,
+    format: &str,
+    _quality: u8,
+) -> Result<String, String> {
+    let output = composite_image(frames, editor)?;
 
     let path = Path::new(save_path);
     let format_enum = match format {
@@ -54,12 +68,7 @@ pub fn composite_and_save(
     Ok(path.to_string_lossy().to_string())
 }
 
-fn apply_mosaic(
-    img: &mut RgbaImage,
-    _points: &[LogicalPoint],
-    block_size: f32,
-    scale: f64,
-) {
+fn apply_mosaic(img: &mut RgbaImage, _points: &[LogicalPoint], block_size: f32, scale: f64) {
     let bs = (block_size * scale as f32) as u32;
     if bs == 0 {
         return;
@@ -82,8 +91,12 @@ fn apply_mosaic(
                     count += 1;
                 }
             }
-            if count > 0 {
-                let color = Rgba([(r / count) as u8, (g / count) as u8, (b / count) as u8, 255]);
+            if let Some(color) = r
+                .checked_div(count)
+                .zip(g.checked_div(count))
+                .zip(b.checked_div(count))
+                .map(|((rr, gg), bb)| Rgba([rr as u8, gg as u8, bb as u8, 255]))
+            {
                 for y in by..end_y {
                     for x in bx..end_x {
                         img.put_pixel(x, y, color);

@@ -1,7 +1,6 @@
 on run argv
     set htmlPath to item 1 of argv
     tell application "Safari"
-        activate
         set doc to make new document
         set URL of doc to "file://" & htmlPath
         tell window 1

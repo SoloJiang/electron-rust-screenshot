@@ -7,6 +7,12 @@ pub struct PerformanceMonitor {
     last_memory_read: Option<Instant>,
 }
 
+impl Default for PerformanceMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PerformanceMonitor {
     pub fn new() -> Self {
         Self {
@@ -43,7 +49,9 @@ impl PerformanceMonitor {
 
     pub fn memory_mb(&mut self) -> f64 {
         use sysinfo::{ProcessRefreshKind, RefreshKind, System};
-        let s = System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
+        let s = System::new_with_specifics(
+            RefreshKind::new().with_processes(ProcessRefreshKind::new()),
+        );
         let pid = sysinfo::get_current_pid().expect("valid pid");
         s.process(pid)
             .map(|p| p.memory() as f64 / 1024.0 / 1024.0)

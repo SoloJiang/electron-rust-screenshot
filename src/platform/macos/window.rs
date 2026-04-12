@@ -26,6 +26,23 @@ fn get_i64(dict: &CFDictionary, key: &str) -> Option<i64> {
     }
 }
 
+fn get_f64(dict: &CFDictionary, key: &str) -> Option<f64> {
+    let key = CFString::new(key);
+    let mut value: *const c_void = std::ptr::null();
+    let found = unsafe {
+        CFDictionaryGetValueIfPresent(
+            dict.as_concrete_TypeRef(),
+            key.as_concrete_TypeRef() as *const c_void,
+            &mut value,
+        )
+    };
+    if found != 0 && !value.is_null() {
+        unsafe { CFNumber::wrap_under_get_rule(value as *mut _).to_f64() }
+    } else {
+        None
+    }
+}
+
 fn get_string(dict: &CFDictionary, key: &str) -> Option<String> {
     let key = CFString::new(key);
     let mut value: *const c_void = std::ptr::null();
@@ -50,7 +67,8 @@ pub fn enumerate_windows() -> Vec<DetectedWindow> {
     let mut windows = Vec::new();
 
     for i in 0..array.len() {
-        let Some(dict) = array.get(i) else { continue };
+        let idx = array.len() - 1 - i;
+        let Some(dict) = array.get(idx) else { continue };
 
         let (x, y, w, h) = {
             let mut bounds_ptr: *const c_void = std::ptr::null();
@@ -77,8 +95,9 @@ pub fn enumerate_windows() -> Vec<DetectedWindow> {
         let pid = get_i64(&dict, "kCGWindowOwnerPID").unwrap_or(0);
         let title = get_string(&dict, "kCGWindowName").unwrap_or_default();
         let layer = get_i64(&dict, "kCGWindowLayer").unwrap_or(0) as i32;
+        let alpha = get_f64(&dict, "kCGWindowAlpha").unwrap_or(1.0);
 
-        if layer < 0 {
+        if layer < 0 || alpha < 0.001 || w <= 1.0 || h <= 1.0 {
             continue;
         }
 
@@ -87,9 +106,39 @@ pub fn enumerate_windows() -> Vec<DetectedWindow> {
             title,
             bounds: Rect::new(x, y, w, h),
             owner_pid: pid,
-            z_order: layer,
+            z_order: i as i32, // i=0 is back-most, i=N-1 is front-most
         });
     }
 
+    // Debug: print first few windows to verify order
+    for (i, w) in windows.iter().rev().take(5).enumerate() {
+        eprintln!("[enumerate_windows] index {} (from front): z={}, title={:?}, bounds={:?}", i, w.z_order, w.title, w.bounds);
+    }
+
     windows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn debug_print_enumerate_order() {
+        let windows = enumerate_windows();
+        eprintln!("Total windows returned: {}", windows.len());
+        for (i, w) in windows.iter().rev().take(5).enumerate() {
+            eprintln!(
+                "frontmost #{}: z_order={} title={:?} bounds={:?}",
+                i, w.z_order, w.title, w.bounds
+            );
+        }
+        for (i, w) in windows.iter().take(5).enumerate() {
+            eprintln!(
+                "backmost #{}: z_order={} title={:?} bounds={:?}",
+                i, w.z_order, w.title, w.bounds
+            );
+        }
+    }
+
 }

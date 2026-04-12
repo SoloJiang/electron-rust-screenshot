@@ -45,7 +45,8 @@ pub fn serialize_event(event: &EngineEvent) -> String {
         EngineEvent::Error { code, message } => {
             format!(
                 "{{\"type\":\"error\",\"code\":\"{}\",\"message\":\"{}\"}}",
-                code, message.replace('\\', "\\\\").replace('"', "\\\"")
+                code,
+                message.replace('\\', "\\\\").replace('"', "\\\"")
             )
         }
         EngineEvent::Metrics(m) => {

@@ -9,21 +9,11 @@ pub fn logical_to_physical(px: f64, scale: f64) -> f64 {
 }
 
 pub fn rect_physical_to_logical(r: Rect, scale: f64) -> Rect {
-    Rect::new(
-        r.x / scale,
-        r.y / scale,
-        r.w / scale,
-        r.h / scale,
-    )
+    Rect::new(r.x / scale, r.y / scale, r.w / scale, r.h / scale)
 }
 
 pub fn rect_logical_to_physical(r: Rect, scale: f64) -> Rect {
-    Rect::new(
-        r.x * scale,
-        r.y * scale,
-        r.w * scale,
-        r.h * scale,
-    )
+    Rect::new(r.x * scale, r.y * scale, r.w * scale, r.h * scale)
 }
 
 pub fn point_physical_to_logical(p: LogicalPoint, scale: f64) -> LogicalPoint {

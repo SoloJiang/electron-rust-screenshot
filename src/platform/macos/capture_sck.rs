@@ -2,6 +2,12 @@ use crate::core::capture::{CaptureError, PlatformCapture, ScreenFrame};
 
 pub struct MacOsSckCapture;
 
+impl Default for MacOsSckCapture {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MacOsSckCapture {
     pub fn new() -> Self {
         Self

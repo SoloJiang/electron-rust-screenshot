@@ -27,8 +27,8 @@ fs.writeFileSync('${tmpFile}', JSON.stringify(result));
     }
   );
 
-  // Wait for overlay to appear
-  await new Promise((r) => setTimeout(r, 800));
+  // Wait for overlay to appear and gain focus
+  await new Promise((r) => setTimeout(r, 1200));
 
   await actions();
 

@@ -10,6 +10,7 @@ use crate::bridge::events_js::serialize_event;
 use crate::core::engine::Engine;
 use crate::core::events::EngineEvent;
 use crate::core::types::Color;
+use crate::core::window::WindowDetector;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use std::sync::{Arc, Mutex};
@@ -43,11 +44,13 @@ pub fn start(config: Option<ScreenshotConfig>) -> Result<String> {
                 while let Some(evt) = eng.event_bus.try_recv() {
                     events.push(evt);
                 }
-                if let Some(EngineEvent::Error { message, .. }) = events.into_iter().rev().next() {
+                if let Some(EngineEvent::Error { message, .. }) = events.into_iter().next_back() {
                     return Err(Error::from_reason(message));
                 }
                 return Err(Error::from_reason("Capture failed".to_string()));
             }
+            let windows = crate::platform::macos::window::enumerate_windows();
+            eng.detector = Some(WindowDetector::new(windows));
         }
         let frames = engine.lock().unwrap().frames.clone();
         OverlayManager::new(Arc::clone(&engine), frames).run();
@@ -64,9 +67,7 @@ pub fn start(config: Option<ScreenshotConfig>) -> Result<String> {
     let final_event = events.into_iter().rev().find(|e| {
         matches!(
             e,
-            EngineEvent::Saved { .. }
-                | EngineEvent::Cancelled
-                | EngineEvent::Error { .. }
+            EngineEvent::Saved { .. } | EngineEvent::Cancelled | EngineEvent::Error { .. }
         )
     });
     if let Some(evt) = final_event {

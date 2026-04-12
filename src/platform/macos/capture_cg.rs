@@ -9,6 +9,12 @@ use image::RgbaImage;
 
 pub struct MacOsCgCapture;
 
+impl Default for MacOsCgCapture {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MacOsCgCapture {
     pub fn new() -> Self {
         Self
@@ -46,7 +52,9 @@ impl PlatformCapture for MacOsCgCapture {
             CGGetActiveDisplayList(display_count, displays.as_mut_ptr(), &mut display_count)
         };
         if result != 0 {
-            return Err(CaptureError::PlatformError("CGGetActiveDisplayList failed".into()));
+            return Err(CaptureError::PlatformError(
+                "CGGetActiveDisplayList failed".into(),
+            ));
         }
 
         let mut frames = Vec::with_capacity(display_count as usize);
