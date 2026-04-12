@@ -178,6 +178,15 @@ impl Engine {
         }
     }
 
+    pub fn select_hovered_window(&mut self) {
+        if let (EngineState::OverlayRunning, Some(win)) = (&self.state, self.hovered_window.clone()) {
+            let screen_id = self
+                .screen_at_point(LogicalPoint::new(win.bounds.x, win.bounds.y))
+                .unwrap_or_else(|| "primary".to_string());
+            self.select_region(screen_id, win.bounds);
+        }
+    }
+
     pub fn on_edit_mouse_down(&mut self, pos: LogicalPoint) {
         if matches!(self.state, EngineState::Editing) {
             self.edit_drag_start = Some(pos);
