@@ -134,22 +134,30 @@ impl ScreenshotApp {
                         .rect_stroke(r, Rounding::ZERO, Stroke::new(1.0, Color32::WHITE));
                 }
                 crate::core::engine::EngineState::Editing => {
-                    // Handle editing mouse interaction
-                    if pointer.any_pressed() {
-                        if let Some(pos) = pointer.press_origin() {
-                            engine
-                                .on_edit_mouse_down(LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y));
+                    // Only allow editing mouse interaction inside the selection area.
+                    // This effectively locks the other monitor(s) when editing a single-screen selection.
+                    let in_selection = engine.editor.selection.map(|sel| {
+                        pointer.latest_pos().map(|pos| {
+                            let logical = LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y);
+                            sel.contains(logical)
+                        }).unwrap_or(false)
+                    }).unwrap_or(true);
+
+                    if in_selection {
+                        if pointer.any_pressed() {
+                            if let Some(pos) = pointer.press_origin() {
+                                engine.on_edit_mouse_down(LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y));
+                            }
                         }
-                    }
-                    if pointer.is_decidedly_dragging() {
-                        if let Some(pos) = pointer.latest_pos() {
-                            engine
-                                .on_edit_mouse_drag(LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y));
+                        if pointer.is_decidedly_dragging() {
+                            if let Some(pos) = pointer.latest_pos() {
+                                engine.on_edit_mouse_drag(LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y));
+                            }
                         }
-                    }
-                    if pointer.any_released() {
-                        if let Some(pos) = pointer.latest_pos() {
-                            engine.on_edit_mouse_up(LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y));
+                        if pointer.any_released() {
+                            if let Some(pos) = pointer.latest_pos() {
+                                engine.on_edit_mouse_up(LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y));
+                            }
                         }
                     }
 
