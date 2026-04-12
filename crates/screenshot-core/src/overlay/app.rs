@@ -111,14 +111,17 @@ impl ScreenshotApp {
                     ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
 
                     if let Some(win) = &engine.hovered_window {
-                        // Unmask the hovered window so original screenshot shows through
-                        self.draw_unmasked_region(ui.painter(), win.bounds, offset);
-                        let r = egui_rect_from_logical(win.bounds, offset);
-                        ui.painter().rect_stroke(
-                            r,
-                            Rounding::ZERO,
-                            Stroke::new(2.0, Color32::from_rgb(0, 120, 255)),
-                        );
+                        const STROKE: f64 = 1.0;
+                        self.draw_unmasked_region(ui.painter(), inset_rect(win.bounds, STROKE), offset);
+                        let clip = egui_rect_from_logical(win.bounds, offset);
+                        let stroke_rect = egui_rect_from_logical(inset_rect(win.bounds, STROKE * 0.5), offset);
+                        ui.painter()
+                            .with_clip_rect(clip)
+                            .rect_stroke(
+                                stroke_rect,
+                                Rounding::ZERO,
+                                Stroke::new(STROKE as f32, Color32::from_rgb(0, 120, 255)),
+                            );
                     }
                 }
                 crate::core::engine::EngineState::FreeSelecting { start, current } => {
@@ -129,13 +132,17 @@ impl ScreenshotApp {
                         (current.x - start.x).abs(),
                         (current.y - start.y).abs(),
                     );
-                    // Unmask the selection area
-                    self.draw_unmasked_region(ui.painter(), sel, offset);
-                    let s = egui::pos2((start.x - offset.x) as f32, (start.y - offset.y) as f32);
-                    let c = egui::pos2((current.x - offset.x) as f32, (current.y - offset.y) as f32);
-                    let r = EguiRect::from_two_pos(s, c);
+                    const STROKE: f64 = 1.0;
+                    self.draw_unmasked_region(ui.painter(), inset_rect(sel, STROKE), offset);
+                    let clip = egui_rect_from_logical(sel, offset);
+                    let stroke_rect = egui_rect_from_logical(inset_rect(sel, STROKE * 0.5), offset);
                     ui.painter()
-                        .rect_stroke(r, Rounding::ZERO, Stroke::new(1.0, Color32::WHITE));
+                        .with_clip_rect(clip)
+                        .rect_stroke(
+                            stroke_rect,
+                            Rounding::ZERO,
+                            Stroke::new(STROKE as f32, Color32::from_rgb(0, 120, 255)),
+                        );
                 }
                 crate::core::engine::EngineState::Editing => {
                     if let Some(sel) = engine.editor.selection {
@@ -167,6 +174,11 @@ impl ScreenshotApp {
                                     match resize_hit {
                                         Some(ResizeHit::Move) if can_move => {
                                             engine.on_edit_mouse_down(pos);
+                                        }
+                                        Some(ResizeHit::Move) => {
+                                            if sel.contains(pos) {
+                                                engine.on_edit_mouse_down(pos);
+                                            }
                                         }
                                         Some(hit) => {
                                             engine.on_selection_transform_start(pos, hit);
@@ -200,7 +212,13 @@ impl ScreenshotApp {
                         // Cursor feedback
                         if let Some(ref state) = engine.selection_transform {
                             ui.ctx().set_cursor_icon(match state.kind {
-                                ResizeHit::Move => egui::CursorIcon::Move,
+                                ResizeHit::Move => {
+                                    if can_move {
+                                        egui::CursorIcon::Move
+                                    } else {
+                                        egui::CursorIcon::Default
+                                    }
+                                }
                                 ResizeHit::ResizeEdge { edge: Edge::North | Edge::South } => {
                                     egui::CursorIcon::ResizeVertical
                                 }
@@ -216,7 +234,13 @@ impl ScreenshotApp {
                             });
                         } else if let Some(hit) = resize_hit {
                             ui.ctx().set_cursor_icon(match hit {
-                                ResizeHit::Move => egui::CursorIcon::Move,
+                                ResizeHit::Move => {
+                                    if can_move {
+                                        egui::CursorIcon::Move
+                                    } else {
+                                        egui::CursorIcon::Default
+                                    }
+                                }
                                 ResizeHit::ResizeEdge { edge: Edge::North | Edge::South } => {
                                     egui::CursorIcon::ResizeVertical
                                 }
@@ -234,66 +258,75 @@ impl ScreenshotApp {
                             ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
                         }
 
-                        // Uniform mask over entire screen
-                        ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
+                        let screen_rect = Rect::new(offset.x, offset.y, rect.width() as f64, rect.height() as f64);
+                        if sel.intersects(screen_rect) {
+                            // Uniform mask over entire screen
+                            ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
 
-                        // Unmask the selected region
-                        self.draw_unmasked_region(ui.painter(), sel, offset);
-                        // Cyan selection border to distinguish from blue handles
-                        let sel_rect = egui_rect_from_logical(sel, offset);
-                        ui.painter().rect_stroke(
-                            sel_rect,
-                            Rounding::ZERO,
-                            Stroke::new(1.5, Color32::from_rgb(0, 255, 255)),
-                        );
+                            // Unmask the selected region (inset by border width for border-box look)
+                            const STROKE: f64 = 1.0;
+                            self.draw_unmasked_region(ui.painter(), inset_rect(sel, STROKE), offset);
+                            // Blue selection border (same as hover/window-select color)
+                            let clip = egui_rect_from_logical(sel, offset);
+                            let sel_rect = egui_rect_from_logical(inset_rect(sel, STROKE * 0.5), offset);
+                            ui.painter()
+                                .with_clip_rect(clip)
+                                .rect_stroke(
+                                    sel_rect,
+                                    Rounding::ZERO,
+                                    Stroke::new(STROKE as f32, Color32::from_rgb(0, 120, 255)),
+                                );
 
-                        // Draw 8 resize handles
-                        let handle_radius = 4.0;
-                        let handle_stroke = Stroke::new(1.0, Color32::from_rgb(0, 120, 255));
-                        let handle_positions = [
-                            (sel.x, sel.y),                         // NW
-                            (sel.x + sel.w / 2.0, sel.y),           // N
-                            (sel.x + sel.w, sel.y),                 // NE
-                            (sel.x + sel.w, sel.y + sel.h / 2.0),   // E
-                            (sel.x + sel.w, sel.y + sel.h),         // SE
-                            (sel.x + sel.w / 2.0, sel.y + sel.h),   // S
-                            (sel.x, sel.y + sel.h),                 // SW
-                            (sel.x, sel.y + sel.h / 2.0),           // W
-                        ];
-                        for (hx, hy) in handle_positions {
-                            let hp = egui::pos2((hx - offset.x) as f32, (hy - offset.y) as f32);
-                            ui.painter().circle_filled(hp, handle_radius, Color32::WHITE);
-                            ui.painter().circle_stroke(hp, handle_radius, handle_stroke);
-                        }
-
-                        // Toolbar as a floating window just below the selection
-                        if show_toolbar {
-                            let toolbar_pos = egui::pos2(
-                                (sel.x - offset.x) as f32,
-                                (sel.y + sel.h - offset.y + 8.0) as f32,
-                            );
-                            let save_clicked = egui::Window::new("screenshot_toolbar")
-                                .collapsible(false)
-                                .title_bar(false)
-                                .fixed_pos(toolbar_pos)
-                                .auto_sized()
-                                .frame(egui::Frame::window(&egui::Style::default()))
-                                .show(ctx, |ui| draw_toolbar(ui, &mut engine.editor))
-                                .and_then(|r| r.inner)
-                                .unwrap_or(false);
-                            if save_clicked {
-                                engine.save();
+                            // Draw 8 resize handles
+                            let handle_radius = 4.0;
+                            let handle_stroke = Stroke::new(1.0, Color32::from_rgb(0, 120, 255));
+                            let handle_positions = [
+                                (sel.x, sel.y),                         // NW
+                                (sel.x + sel.w / 2.0, sel.y),           // N
+                                (sel.x + sel.w, sel.y),                 // NE
+                                (sel.x + sel.w, sel.y + sel.h / 2.0),   // E
+                                (sel.x + sel.w, sel.y + sel.h),         // SE
+                                (sel.x + sel.w / 2.0, sel.y + sel.h),   // S
+                                (sel.x, sel.y + sel.h),                 // SW
+                                (sel.x, sel.y + sel.h / 2.0),           // W
+                            ];
+                            for (hx, hy) in handle_positions {
+                                let hp = egui::pos2((hx - offset.x) as f32, (hy - offset.y) as f32);
+                                ui.painter().circle_filled(hp, handle_radius, Color32::WHITE);
+                                ui.painter().circle_stroke(hp, handle_radius, handle_stroke);
                             }
-                        }
 
-                        // Draw committed layers
-                        for layer in &engine.editor.layers {
-                            draw_layer(ui.painter(), layer, offset);
-                        }
+                            // Toolbar as a floating window centered below the selection
+                            if show_toolbar {
+                                let toolbar_pos = egui::pos2(
+                                    (sel.x + sel.w / 2.0 - offset.x) as f32,
+                                    (sel.y + sel.h - offset.y + 8.0) as f32,
+                                );
+                                let save_clicked = egui::Area::new(egui::Id::new("screenshot_toolbar"))
+                                    .pivot(egui::Align2::CENTER_TOP)
+                                    .fixed_pos(toolbar_pos)
+                                    .show(ctx, |ui| {
+                                        egui::Frame::window(&egui::Style::default())
+                                            .show(ui, |ui| draw_toolbar(ui, &mut engine.editor))
+                                            .inner
+                                    })
+                                    .inner;
+                                if save_clicked {
+                                    engine.save();
+                                }
+                            }
 
-                        // Draw preview layer
-                        if let Some(preview) = &engine.editor.preview {
-                            draw_layer(ui.painter(), preview, offset);
+                            // Draw committed layers
+                            for layer in &engine.editor.layers {
+                                draw_layer(ui.painter(), layer, offset);
+                            }
+
+                            // Draw preview layer
+                            if let Some(preview) = &engine.editor.preview {
+                                draw_layer(ui.painter(), preview, offset);
+                            }
+                        } else {
+                            ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
                         }
                     } else {
                         ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
@@ -433,6 +466,15 @@ fn egui_rect_from_logical(r: Rect, offset: LogicalPoint) -> EguiRect {
     EguiRect::from_min_max(
         egui::pos2((r.x - offset.x) as f32, (r.y - offset.y) as f32),
         egui::pos2((r.x + r.w - offset.x) as f32, (r.y + r.h - offset.y) as f32),
+    )
+}
+
+fn inset_rect(r: Rect, inset: f64) -> Rect {
+    Rect::new(
+        r.x + inset,
+        r.y + inset,
+        (r.w - 2.0 * inset).max(0.0),
+        (r.h - 2.0 * inset).max(0.0),
     )
 }
 

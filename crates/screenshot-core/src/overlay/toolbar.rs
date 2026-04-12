@@ -5,13 +5,12 @@ pub fn draw_toolbar(ui: &mut Ui, editor: &mut EditorState) -> bool {
     let mut save_clicked = false;
     ui.horizontal(|ui| {
         let tools = [
-            ("S:Select", Tool::Select),
-            ("1:Rect", Tool::Rect),
-            ("2:Ellipse", Tool::Ellipse),
-            ("3:Arrow", Tool::Arrow),
-            ("4:Brush", Tool::Brush),
-            ("5:Mosaic", Tool::Mosaic),
-            ("6:Text", Tool::Text),
+            ("Rect", Tool::Rect),
+            ("Ellipse", Tool::Ellipse),
+            ("Arrow", Tool::Arrow),
+            ("Brush", Tool::Brush),
+            ("Mosaic", Tool::Mosaic),
+            ("Text", Tool::Text),
         ];
         for (label, tool) in tools {
             let button =

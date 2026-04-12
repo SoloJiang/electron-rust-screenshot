@@ -627,4 +627,33 @@ mod tests {
         assert_eq!(new_rect.w, 8.0);
         assert_eq!(new_rect.x, 100.0 + 20.0 - 8.0);
     }
+
+    #[test]
+    fn transform_selection_corner_se_scales_both_dimensions() {
+        let original = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let id = Uuid::new_v4().to_string();
+        let layers = vec![Layer::ShapeRect {
+            id: id.clone(),
+            rect: Rect::new(10.0, 10.0, 20.0, 20.0),
+            stroke_width: 2.0,
+            color: Color::new(255, 0, 0, 255),
+        }];
+
+        let (new_rect, new_layers) = EditorState::transform_selection(
+            original,
+            &layers,
+            &crate::core::types::ResizeHit::ResizeCorner {
+                corner: crate::core::types::Corner::SE,
+            },
+            LogicalPoint::new(100.0, 100.0),
+        );
+
+        assert_eq!(new_rect, Rect::new(0.0, 0.0, 200.0, 200.0));
+
+        if let Layer::ShapeRect { rect, .. } = &new_layers[0] {
+            assert_eq!(*rect, Rect::new(20.0, 20.0, 40.0, 40.0));
+        } else {
+            panic!("expected ShapeRect");
+        }
+    }
 }

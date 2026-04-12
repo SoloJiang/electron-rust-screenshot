@@ -252,7 +252,7 @@ impl ApplicationHandler for MultiWindowApp {
                 self.modifiers = modifiers.state();
             }
             WindowEvent::KeyboardInput { event, .. }
-                if event.state == winit::event::ElementState::Pressed =>
+                if event.state == winit::event::ElementState::Pressed && !event.repeat =>
             {
                 let is_cmd = self.modifiers.super_key();
                 let is_shift = self.modifiers.shift_key();
@@ -289,27 +289,17 @@ impl ApplicationHandler for MultiWindowApp {
                 {
                     let mut engine = self.engine.lock().unwrap();
                     if matches!(engine.state, crate::core::engine::EngineState::Editing) {
-                        if let winit::keyboard::Key::Character(c) = &event.logical_key {
-                            let key = c.as_str();
-                            match key {
-                                "c" | "C" => {
-                                    engine.copy_to_clipboard();
+                        match &event.logical_key {
+                            winit::keyboard::Key::Character(c) => {
+                                let key = c.as_str();
+                                match key {
+                                    "c" | "C" => {
+                                        engine.copy_to_clipboard();
+                                    }
+                                    _ => {}
                                 }
-                                "s" | "S" => {
-                                    engine.editor.active_tool = crate::core::editor::Tool::Select
-                                }
-                                "1" => engine.editor.active_tool = crate::core::editor::Tool::Rect,
-                                "2" => {
-                                    engine.editor.active_tool = crate::core::editor::Tool::Ellipse
-                                }
-                                "3" => engine.editor.active_tool = crate::core::editor::Tool::Arrow,
-                                "4" => engine.editor.active_tool = crate::core::editor::Tool::Brush,
-                                "5" => {
-                                    engine.editor.active_tool = crate::core::editor::Tool::Mosaic
-                                }
-                                "6" => engine.editor.active_tool = crate::core::editor::Tool::Text,
-                                _ => {}
                             }
+                            _ => {}
                         }
                     }
                 }

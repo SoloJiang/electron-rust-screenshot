@@ -725,4 +725,51 @@ mod tests {
 
         assert!(engine.editor.undo_stack.is_empty());
     }
+
+    #[test]
+    fn editing_state_allows_tool_switching() {
+        let mut engine = Engine::new(
+            "/tmp/test.png".into(),
+            "png".into(),
+            90,
+            Color::new(255, 0, 0, 255),
+            3.0,
+            8.0,
+        );
+        engine.state = EngineState::Editing;
+        assert_eq!(engine.editor.active_tool, crate::core::editor::Tool::Select);
+
+        engine.editor.active_tool = crate::core::editor::Tool::Rect;
+        assert_eq!(engine.editor.active_tool, crate::core::editor::Tool::Rect);
+
+        engine.editor.active_tool = crate::core::editor::Tool::Brush;
+        assert_eq!(engine.editor.active_tool, crate::core::editor::Tool::Brush);
+
+        engine.editor.active_tool = crate::core::editor::Tool::Select;
+        assert_eq!(engine.editor.active_tool, crate::core::editor::Tool::Select);
+    }
+
+    #[test]
+    fn abort_edit_drag_clears_state() {
+        let mut engine = Engine::new(
+            "/tmp/test.png".into(),
+            "png".into(),
+            90,
+            Color::new(255, 0, 0, 255),
+            3.0,
+            8.0,
+        );
+        engine.state = EngineState::Editing;
+        engine.editor.selection = Some(Rect::new(0.0, 0.0, 500.0, 500.0));
+        engine.editor.active_tool = crate::core::editor::Tool::Rect;
+
+        engine.on_edit_mouse_down(LogicalPoint::new(10.0, 10.0));
+        engine.on_edit_mouse_drag(LogicalPoint::new(50.0, 50.0));
+        assert!(engine.edit_drag_start.is_some());
+        assert!(engine.editor.preview.is_some());
+
+        engine.abort_edit_drag();
+        assert!(engine.edit_drag_start.is_none());
+        assert!(engine.editor.preview.is_none());
+    }
 }
