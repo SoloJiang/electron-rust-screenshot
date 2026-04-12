@@ -69,6 +69,7 @@ impl ScreenshotApp {
         offset: LogicalPoint,
         frame_time_ms: f64,
         egui_paint_ms: f64,
+        show_toolbar: bool,
     ) {
         let mut engine = self.engine.lock().unwrap();
 
@@ -177,22 +178,24 @@ impl ScreenshotApp {
 
                         // Toolbar as a floating window just below the selection so it stays
                         // visible regardless of the multi-monitor union rect size.
-                        let toolbar_pos = egui::pos2(
-                            (sel.x - offset.x) as f32,
-                            (sel.y + sel.h - offset.y + 8.0) as f32,
-                        );
-                        let save_clicked = egui::Window::new("screenshot_toolbar")
-                            .collapsible(false)
-                            .title_bar(false)
-                            .fixed_pos(toolbar_pos)
-                            .auto_sized()
-                            .frame(egui::Frame::window(&egui::Style::default()))
-                            .show(ctx, |ui| draw_toolbar(ui, &mut engine.editor))
-                            .and_then(|r| r.inner)
-                            .unwrap_or(false);
-                        if save_clicked {
-                            let frames = &self.frames;
-                            engine.save(frames);
+                        if show_toolbar {
+                            let toolbar_pos = egui::pos2(
+                                (sel.x - offset.x) as f32,
+                                (sel.y + sel.h - offset.y + 8.0) as f32,
+                            );
+                            let save_clicked = egui::Window::new("screenshot_toolbar")
+                                .collapsible(false)
+                                .title_bar(false)
+                                .fixed_pos(toolbar_pos)
+                                .auto_sized()
+                                .frame(egui::Frame::window(&egui::Style::default()))
+                                .show(ctx, |ui| draw_toolbar(ui, &mut engine.editor))
+                                .and_then(|r| r.inner)
+                                .unwrap_or(false);
+                            if save_clicked {
+                                let frames = &self.frames;
+                                engine.save(frames);
+                            }
                         }
                     }
 

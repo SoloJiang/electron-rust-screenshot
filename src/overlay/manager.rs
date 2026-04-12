@@ -63,9 +63,9 @@ impl MultiWindowApp {
         }
     }
 
-    fn update_interactivity(&mut self) {
+    fn active_window_id(&self) -> Option<winit::window::WindowId> {
         let engine = self.engine.lock().unwrap();
-        let active_id = match engine.state {
+        match engine.state {
             crate::core::engine::EngineState::Editing => {
                 engine.editor.selection.and_then(|sel| {
                     let cx = sel.x + sel.w / 2.0;
@@ -77,8 +77,11 @@ impl MultiWindowApp {
                 })
             }
             _ => None,
-        };
-        drop(engine);
+        }
+    }
+
+    fn update_interactivity(&mut self) {
+        let active_id = self.active_window_id();
 
         for (id, ws) in self.windows.iter_mut() {
             let should_ignore = active_id.map(|a| a != *id).unwrap_or(false);
@@ -218,6 +221,8 @@ impl ApplicationHandler for MultiWindowApp {
             return;
         }
 
+        let show_toolbar = self.active_window_id() == Some(window_id);
+
         let Some(ws) = self.windows.get_mut(&window_id) else {
             return;
         };
@@ -310,6 +315,7 @@ impl ApplicationHandler for MultiWindowApp {
                         offset,
                         ws.last_frame_time_ms,
                         ws.last_egui_paint_ms,
+                        show_toolbar,
                     );
                 });
                 ws.egui_state.handle_platform_output(&ws.window, full_output.platform_output);
