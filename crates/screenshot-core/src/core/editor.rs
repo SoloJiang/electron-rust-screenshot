@@ -291,12 +291,9 @@ impl EditorState {
         } else {
             new_rect.h / original_selection.h
         };
-        let tx = new_rect.x - original_selection.x;
-        let ty = new_rect.y - original_selection.y;
-
         let new_layers: Vec<Layer> = layers
             .iter()
-            .map(|l| transform_layer(l, original_selection, new_rect, tx, ty, sx, sy))
+            .map(|l| transform_layer(l, original_selection, new_rect, sx, sy))
             .collect();
 
         (new_rect, new_layers)
@@ -307,8 +304,6 @@ fn transform_layer(
     layer: &Layer,
     original: Rect,
     new_rect: Rect,
-    _tx: f64,
-    _ty: f64,
     sx: f64,
     sy: f64,
 ) -> Layer {
@@ -600,5 +595,35 @@ mod tests {
         state.redo();
         assert_eq!(state.selection, new_selection);
         assert_eq!(state.layers, new_layers);
+    }
+
+    #[test]
+    fn transform_selection_clamps_min_size() {
+        let original = Rect::new(100.0, 100.0, 20.0, 20.0);
+        let layers: Vec<Layer> = Vec::new();
+
+        // Drag North edge down by 50px (would make height negative)
+        let (new_rect, _) = EditorState::transform_selection(
+            original,
+            &layers,
+            &crate::core::types::ResizeHit::ResizeEdge {
+                edge: crate::core::types::Edge::North,
+            },
+            LogicalPoint::new(0.0, 50.0),
+        );
+        assert_eq!(new_rect.h, 8.0);
+        assert_eq!(new_rect.y, 100.0 + 20.0 - 8.0);
+
+        // Drag West edge right by 50px (would make width negative)
+        let (new_rect, _) = EditorState::transform_selection(
+            original,
+            &layers,
+            &crate::core::types::ResizeHit::ResizeEdge {
+                edge: crate::core::types::Edge::West,
+            },
+            LogicalPoint::new(50.0, 0.0),
+        );
+        assert_eq!(new_rect.w, 8.0);
+        assert_eq!(new_rect.x, 100.0 + 20.0 - 8.0);
     }
 }
