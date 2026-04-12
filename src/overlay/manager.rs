@@ -4,6 +4,7 @@ use crate::core::types::{LogicalPoint, Rect};
 use crate::overlay::app::ScreenshotApp;
 use crate::overlay::gl::GlContext;
 use egui_winit::State as EguiState;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -23,162 +24,204 @@ impl OverlayManager {
     pub fn run(self) {
         let event_loop = EventLoop::new().expect("Failed to create event loop");
         event_loop.set_control_flow(ControlFlow::Wait);
-        let mut app = OverlayApp::new(self.engine, self.frames);
+        let mut app = MultiWindowApp::new(self.engine);
+        app.pending_frames = self.frames;
         let _ = event_loop.run_app(&mut app);
     }
 }
 
-struct OverlayApp {
-    engine: Arc<Mutex<Engine>>,
-    _frames: Vec<ScreenFrame>,
-    window: Option<Window>,
-    gl_context: Option<GlContext>,
-    egui_ctx: Option<egui::Context>,
-    egui_state: Option<EguiState>,
-    screenshot_app: Option<ScreenshotApp>,
-    painter: Option<egui_glow::Painter>,
+struct WindowState {
+    window: Window,
+    gl_context: GlContext,
+    egui_state: EguiState,
+    painter: egui_glow::Painter,
+    screen_id: String,
+    global_offset: LogicalPoint,
+    screen_bounds: Rect,
+    ignores_mouse_events: bool,
     last_frame_time_ms: f64,
     last_egui_paint_ms: f64,
+}
+
+struct MultiWindowApp {
+    engine: Arc<Mutex<Engine>>,
+    egui_ctx: egui::Context,
+    screenshot_app: Option<ScreenshotApp>,
+    frame_textures: Vec<Option<egui::TextureHandle>>,
+    windows: HashMap<winit::window::WindowId, WindowState>,
     start_time: Option<std::time::Instant>,
     mock_drag_done: bool,
     focus_attempts: u32,
     modifiers: winit::keyboard::ModifiersState,
-    window_offset: LogicalPoint,
+    pending_frames: Vec<ScreenFrame>,
 }
 
-impl OverlayApp {
-    fn new(engine: Arc<Mutex<Engine>>, frames: Vec<ScreenFrame>) -> Self {
+impl MultiWindowApp {
+    fn new(engine: Arc<Mutex<Engine>>) -> Self {
         Self {
             engine,
-            _frames: frames,
-            window: None,
-            gl_context: None,
-            egui_ctx: None,
-            egui_state: None,
+            egui_ctx: egui::Context::default(),
             screenshot_app: None,
-            painter: None,
-            last_frame_time_ms: 0.0,
-            last_egui_paint_ms: 0.0,
+            frame_textures: Vec::new(),
+            windows: HashMap::new(),
             start_time: None,
             mock_drag_done: false,
             focus_attempts: 0,
             modifiers: winit::keyboard::ModifiersState::empty(),
-            window_offset: LogicalPoint::new(0.0, 0.0),
+            pending_frames: Vec::new(),
+        }
+    }
+
+    fn update_interactivity(&mut self) {
+        let engine = self.engine.lock().unwrap();
+        let active_id = match engine.state {
+            crate::core::engine::EngineState::Editing => {
+                engine.editor.selection.and_then(|sel| {
+                    let cx = sel.x + sel.w / 2.0;
+                    let cy = sel.y + sel.h / 2.0;
+                    self.windows.iter().find(|(_, ws)| {
+                        ws.screen_bounds
+                            .contains(LogicalPoint::new(cx, cy))
+                    }).map(|(id, _)| *id)
+                })
+            }
+            _ => None,
+        };
+        drop(engine);
+
+        for (id, ws) in self.windows.iter_mut() {
+            let should_ignore = active_id.map(|a| a != *id).unwrap_or(false);
+            if should_ignore != ws.ignores_mouse_events {
+                #[cfg(target_os = "macos")]
+                unsafe {
+                    use objc::msg_send;
+                    use objc::sel;
+                    use objc::sel_impl;
+                    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                    use objc::runtime::Object;
+                    if let Ok(handle) = ws.window.window_handle() {
+                        if let RawWindowHandle::AppKit(appkit) = handle.as_raw() {
+                            let ns_view: *mut Object = appkit.ns_view.as_ptr() as *mut Object;
+                            let ns_window: *mut Object = msg_send![ns_view, window];
+                            if !ns_window.is_null() {
+                                let _: () = msg_send![ns_window, setIgnoresMouseEvents: should_ignore];
+                            }
+                        }
+                    }
+                }
+                ws.ignores_mouse_events = should_ignore;
+            }
         }
     }
 }
 
-impl ApplicationHandler for OverlayApp {
+impl ApplicationHandler for MultiWindowApp {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let union_rect = self._frames.iter().fold(None, |acc: Option<Rect>, f| {
-            let b = f.logical_bounds;
-            Some(match acc {
-                None => Rect::new(b.x, b.y, b.w, b.h),
-                Some(r) => {
-                    let min_x = r.x.min(b.x);
-                    let min_y = r.y.min(b.y);
-                    let max_x = (r.x + r.w).max(b.x + b.w);
-                    let max_y = (r.y + r.h).max(b.y + b.h);
-                    Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
-                }
-            })
-        });
-        let rect = union_rect.unwrap_or(Rect::new(0.0, 0.0, 1920.0, 1080.0));
-        let window_attributes = Window::default_attributes()
-            .with_title("Screenshot Overlay")
-            .with_inner_size(winit::dpi::LogicalSize::new(rect.w, rect.h))
-            .with_position(winit::dpi::LogicalPosition::new(rect.x, rect.y))
-            .with_decorations(false)
-            .with_transparent(true)
-            .with_resizable(false);
+        let frames = std::mem::take(&mut self.pending_frames);
+        if frames.is_empty() {
+            return;
+        }
+        let mut screenshot_app = ScreenshotApp::new(Arc::clone(&self.engine), frames.clone());
+        screenshot_app.load_screenshot_textures(&self.egui_ctx);
+        self.frame_textures = screenshot_app.frame_textures.clone();
+        self.screenshot_app = Some(screenshot_app);
 
-        let window = event_loop.create_window(window_attributes).unwrap();
+        for frame in frames {
+            let b = frame.logical_bounds;
+            let window_attributes = Window::default_attributes()
+                .with_title("Screenshot Overlay")
+                .with_inner_size(winit::dpi::LogicalSize::new(b.w, b.h))
+                .with_position(winit::dpi::LogicalPosition::new(b.x, b.y))
+                .with_decorations(false)
+                .with_transparent(true)
+                .with_resizable(false);
 
-        #[cfg(target_os = "macos")]
-        unsafe {
-            use objc::class;
-            use objc::msg_send;
-            use objc::runtime::Object;
-            use objc::sel;
-            use objc::sel_impl;
-            use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-            let ns_app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
-            let policy: i64 = 0; // NSApplicationActivationPolicyRegular
-            let _: () = msg_send![ns_app, setActivationPolicy: policy];
-            let _: () = msg_send![ns_app, activateIgnoringOtherApps: true];
-            if let Ok(handle) = window.window_handle() {
-                if let RawWindowHandle::AppKit(appkit) = handle.as_raw() {
-                    let ns_view: *mut Object = appkit.ns_view.as_ptr() as *mut Object;
-                    let ns_window: *mut Object = msg_send![ns_view, window];
-                    if !ns_window.is_null() {
-                        let level: i64 = 25; // NSStatusWindowLevel
-                        let _: () = msg_send![ns_window, setLevel: level];
-                        let _: () = msg_send![ns_window, makeKeyAndOrderFront: std::ptr::null_mut::<Object>()];
+            let window = event_loop.create_window(window_attributes).unwrap();
+
+            #[cfg(target_os = "macos")]
+            unsafe {
+                use objc::class;
+                use objc::msg_send;
+                use objc::runtime::Object;
+                use objc::sel;
+                use objc::sel_impl;
+                use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                let ns_app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+                let policy: i64 = 0; // NSApplicationActivationPolicyRegular
+                let _: () = msg_send![ns_app, setActivationPolicy: policy];
+                let _: () = msg_send![ns_app, activateIgnoringOtherApps: true];
+                if let Ok(handle) = window.window_handle() {
+                    if let RawWindowHandle::AppKit(appkit) = handle.as_raw() {
+                        let ns_view: *mut Object = appkit.ns_view.as_ptr() as *mut Object;
+                        let ns_window: *mut Object = msg_send![ns_view, window];
+                        if !ns_window.is_null() {
+                            let level: i64 = 25; // NSStatusWindowLevel
+                            let _: () = msg_send![ns_window, setLevel: level];
+                            let _: () = msg_send![ns_window, makeKeyAndOrderFront: std::ptr::null_mut::<Object>()];
+                        }
                     }
                 }
             }
+
+            let gl = unsafe { GlContext::new(&window, event_loop) };
+            let egui_state = EguiState::new(
+                self.egui_ctx.clone(),
+                egui::ViewportId::default(),
+                &window,
+                Some(window.scale_factor() as f32),
+                None,
+                None::<usize>,
+            );
+            let painter = egui_glow::Painter::new(gl.gl.clone(), "", None, true)
+                .expect("Failed to create egui_glow Painter");
+
+            let ws = WindowState {
+                window,
+                gl_context: gl,
+                egui_state,
+                painter,
+                screen_id: frame.screen_id.clone(),
+                global_offset: LogicalPoint::new(b.x, b.y),
+                screen_bounds: b,
+                ignores_mouse_events: false,
+                last_frame_time_ms: 0.0,
+                last_egui_paint_ms: 0.0,
+            };
+            let id = ws.window.id();
+            self.windows.insert(id, ws);
         }
 
-        let gl = unsafe { GlContext::new(&window, event_loop) };
-        let egui_ctx = egui::Context::default();
-        let egui_state = EguiState::new(
-            egui_ctx.clone(),
-            egui::ViewportId::default(),
-            &window,
-            Some(window.scale_factor() as f32),
-            None,
-            None::<usize>,
-        );
-        let frames = std::mem::take(&mut self._frames);
-        let offset = LogicalPoint::new(rect.x, rect.y);
-        let mut app = ScreenshotApp::new(Arc::clone(&self.engine), frames);
-        app.load_screenshot_textures(&egui_ctx);
-        let painter = egui_glow::Painter::new(gl.gl.clone(), "", None, true)
-            .expect("Failed to create egui_glow Painter");
-
-        self.window_offset = offset;
-        self.window = Some(window);
-        self.gl_context = Some(gl);
-        self.egui_ctx = Some(egui_ctx);
-        self.egui_state = Some(egui_state);
-        self.screenshot_app = Some(app);
-        self.painter = Some(painter);
         self.start_time = Some(std::time::Instant::now());
-        if let Some(window) = &self.window {
-            window.focus_window();
-            window.request_redraw();
+        for ws in self.windows.values() {
+            ws.window.focus_window();
+            ws.window.request_redraw();
         }
     }
 
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        _window_id: winit::window::WindowId,
+        window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        let Some(window) = self.window.as_ref() else {
-            return;
-        };
-        let Some(gl) = self.gl_context.as_ref() else {
-            return;
-        };
-        let Some(egui_ctx) = self.egui_ctx.as_ref() else {
-            return;
-        };
-        let Some(egui_state) = self.egui_state.as_mut() else {
-            return;
-        };
         let Some(app) = self.screenshot_app.as_mut() else {
             return;
         };
-        let Some(painter) = self.painter.as_mut() else {
-            return;
+
+        let response = {
+            let Some(ws) = self.windows.get_mut(&window_id) else {
+                return;
+            };
+            ws.egui_state.on_window_event(&ws.window, &event)
         };
 
-        let response = egui_state.on_window_event(window, &event);
         if response.consumed {
             return;
         }
+
+        let Some(ws) = self.windows.get_mut(&window_id) else {
+            return;
+        };
 
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
@@ -249,52 +292,59 @@ impl ApplicationHandler for OverlayApp {
             }
             WindowEvent::RedrawRequested => {
                 let frame_start = std::time::Instant::now();
-                let size = window.inner_size();
-                gl.resize(size.width, size.height);
+                let size = ws.window.inner_size();
+                ws.gl_context.resize(size.width, size.height);
                 unsafe {
                     use glow::HasContext;
-                    gl.gl.viewport(0, 0, size.width as i32, size.height as i32);
-                    gl.gl.clear_color(0.0, 0.0, 0.0, 0.0);
-                    gl.gl.clear(glow::COLOR_BUFFER_BIT);
+                    ws.gl_context.gl.viewport(0, 0, size.width as i32, size.height as i32);
+                    ws.gl_context.gl.clear_color(0.0, 0.0, 0.0, 0.0);
+                    ws.gl_context.gl.clear(glow::COLOR_BUFFER_BIT);
                 }
 
-                let raw_input = egui_state.take_egui_input(window);
-                let full_output = egui_ctx.run(raw_input, |ctx| {
+                let raw_input = ws.egui_state.take_egui_input(&ws.window);
+                let offset = ws.global_offset;
+                let full_output = self.egui_ctx.run(raw_input, |ctx| {
                     app.update(
                         ctx,
                         &mut egui::Frame::none(),
-                        self.window_offset,
-                        self.last_frame_time_ms,
-                        self.last_egui_paint_ms,
+                        offset,
+                        ws.last_frame_time_ms,
+                        ws.last_egui_paint_ms,
                     );
                 });
-                egui_state.handle_platform_output(window, full_output.platform_output);
+                ws.egui_state.handle_platform_output(&ws.window, full_output.platform_output);
 
                 let clipped_primitives =
-                    egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
-                let ppp = egui_ctx.native_pixels_per_point().unwrap_or(1.0);
+                    self.egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
+                let ppp = self.egui_ctx.native_pixels_per_point().unwrap_or(1.0);
                 let paint_start = std::time::Instant::now();
-                painter.paint_and_update_textures(
+                ws.painter.paint_and_update_textures(
                     [size.width, size.height],
                     ppp,
                     &clipped_primitives,
                     &full_output.textures_delta,
                 );
-                self.last_egui_paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
+                ws.last_egui_paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
 
-                gl.swap_buffers();
-                self.last_frame_time_ms = frame_start.elapsed().as_secs_f64() * 1000.0;
-                window.request_redraw();
+                ws.gl_context.swap_buffers();
+                ws.last_frame_time_ms = frame_start.elapsed().as_secs_f64() * 1000.0;
+                ws.window.request_redraw();
             }
             _ => {}
+        }
+
+        self.update_interactivity();
+
+        if self.engine.lock().unwrap().should_close {
+            event_loop.exit();
         }
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if let Some(window) = &self.window {
-            window.request_redraw();
+        for ws in self.windows.values() {
+            ws.window.request_redraw();
             if self.focus_attempts < 60 {
-                window.focus_window();
+                ws.window.focus_window();
                 #[cfg(target_os = "macos")]
                 unsafe {
                     use objc::class;
@@ -305,7 +355,7 @@ impl ApplicationHandler for OverlayApp {
                     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
                     let ns_app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
                     let _: () = msg_send![ns_app, activateIgnoringOtherApps: true];
-                    if let Ok(handle) = window.window_handle() {
+                    if let Ok(handle) = ws.window.window_handle() {
                         if let RawWindowHandle::AppKit(appkit) = handle.as_raw() {
                             let ns_view: *mut Object = appkit.ns_view.as_ptr() as *mut Object;
                             let ns_window: *mut Object = msg_send![ns_view, window];
@@ -315,13 +365,19 @@ impl ApplicationHandler for OverlayApp {
                         }
                     }
                 }
-                self.focus_attempts += 1;
             }
         }
+        if self.focus_attempts < 60 {
+            self.focus_attempts += 1;
+        }
+
+        self.update_interactivity();
+
         if self.engine.lock().unwrap().should_close {
             event_loop.exit();
             return;
         }
+
         if let Some(start) = self.start_time {
             if !self.mock_drag_done {
                 if let Ok(mock_drag) = std::env::var("SCREENSHOT_TEST_MOCK_DRAG") {
