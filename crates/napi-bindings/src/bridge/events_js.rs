@@ -1,4 +1,4 @@
-use crate::core::events::EngineEvent;
+use screenshot_core::core::events::EngineEvent;
 
 pub fn serialize_event(event: &EngineEvent) -> String {
     match event {

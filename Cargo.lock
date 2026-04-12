@@ -595,29 +595,10 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 name = "electron-rust-screenshot"
 version = "0.1.0"
 dependencies = [
- "cocoa",
- "core-foundation 0.10.1",
- "core-graphics 0.24.0",
- "crossbeam-channel",
- "egui",
- "egui-winit",
- "egui_glow",
- "foreign-types",
- "glow",
- "glutin",
- "glutin-winit",
- "image",
  "napi",
  "napi-build",
  "napi-derive",
- "objc",
- "parking_lot",
- "raw-window-handle",
- "rstar",
- "sysinfo",
- "uuid",
- "windows 0.56.0",
- "winit",
+ "screenshot-core",
 ]
 
 [[package]]
@@ -2073,6 +2054,32 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "screenshot-core"
+version = "0.1.0"
+dependencies = [
+ "cocoa",
+ "core-foundation 0.10.1",
+ "core-graphics 0.24.0",
+ "crossbeam-channel",
+ "egui",
+ "egui-winit",
+ "egui_glow",
+ "foreign-types",
+ "glow",
+ "glutin",
+ "glutin-winit",
+ "image",
+ "objc",
+ "parking_lot",
+ "raw-window-handle",
+ "rstar",
+ "sysinfo",
+ "uuid",
+ "windows 0.56.0",
+ "winit",
+]
 
 [[package]]
 name = "sctk-adwaita"

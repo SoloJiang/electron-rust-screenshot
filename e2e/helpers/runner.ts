@@ -8,7 +8,7 @@ export async function runScreenshot(
   timeoutMs = 15000
 ): Promise<any> {
   const tmpFile = `/tmp/screenshot-result-${Date.now()}.json`;
-  const libPath = path.resolve(__dirname, '../../lib');
+  const libPath = path.resolve(__dirname, '../../dist/lib');
   const child = spawn(
     'node',
     [

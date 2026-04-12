@@ -1,4 +1,4 @@
-use electron_rust_screenshot::platform::macos::window::enumerate_windows;
+use screenshot_core::platform::macos::window::enumerate_windows;
 
 #[test]
 fn debug_enumerate_windows() {

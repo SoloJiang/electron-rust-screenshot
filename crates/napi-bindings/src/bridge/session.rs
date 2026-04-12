@@ -1,5 +1,5 @@
 use crate::bridge::events_js::serialize_event;
-use crate::core::engine::Engine;
+use screenshot_core::core::engine::Engine;
 use napi_derive::napi;
 use std::sync::{Arc, Mutex};
 

@@ -4,7 +4,7 @@ const tmpFile = '/tmp/smoke-result.json';
 
 const child = spawn('node', ['-e', `
 const fs = require('fs');
-const { start } = require('./lib');
+const { start } = require('./dist/lib');
 const result = start({ savePath: '/tmp/smoke.png' });
 fs.writeFileSync('${tmpFile}', JSON.stringify(result));
 `]);

@@ -1,18 +1,18 @@
 #![deny(clippy::all)]
 
 pub mod bridge;
-pub mod core;
-pub mod overlay;
-pub mod platform;
 
 use crate::bridge::config::ScreenshotConfig;
 use crate::bridge::events_js::serialize_event;
-use crate::core::engine::Engine;
-use crate::core::events::EngineEvent;
-use crate::core::types::Color;
-use crate::core::window::WindowDetector;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use screenshot_core::{
+    core::engine::Engine,
+    core::events::EngineEvent,
+    core::types::Color,
+    core::window::WindowDetector,
+    overlay::manager::OverlayManager,
+};
 use std::sync::{Arc, Mutex};
 
 #[napi]
@@ -32,13 +32,12 @@ pub fn start(config: Option<ScreenshotConfig>) -> Result<String> {
 
     #[cfg(target_os = "macos")]
     {
-        use crate::overlay::manager::OverlayManager;
-        use crate::platform::macos::capture_sck::MacOsSckCapture;
+        use screenshot_core::platform::macos::capture_sck::MacOsSckCapture;
         let capture = MacOsSckCapture::new();
         {
             let mut eng = engine.lock().unwrap();
             eng.start(&capture);
-            if matches!(eng.state, crate::core::engine::EngineState::Idle) {
+            if matches!(eng.state, screenshot_core::core::engine::EngineState::Idle) {
                 // Capture failed, drain events and return error
                 let mut events = Vec::new();
                 while let Some(evt) = eng.event_bus.try_recv() {
@@ -49,7 +48,7 @@ pub fn start(config: Option<ScreenshotConfig>) -> Result<String> {
                 }
                 return Err(Error::from_reason("Capture failed".to_string()));
             }
-            let windows = crate::platform::macos::window::enumerate_windows();
+            let windows = screenshot_core::platform::macos::window::enumerate_windows();
             eng.detector = Some(WindowDetector::new(windows));
         }
         let frames = engine.lock().unwrap().frames.clone();

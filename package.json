@@ -2,8 +2,8 @@
   "name": "electron-rust-screenshot",
   "version": "0.1.0",
   "description": "",
-  "main": "lib.js",
-  "types": "index.d.ts",
+  "main": "dist/lib.js",
+  "types": "dist/index.d.ts",
   "directories": {
     "doc": "docs"
   },
@@ -15,8 +15,8 @@
     }
   },
   "scripts": {
-    "build": "napi build --platform --release",
-    "test": "node test-smoke.js"
+    "build": "napi build --platform --release --cargo-cwd crates/napi-bindings dist --js index.js --dts index.d.ts",
+    "test": "node scripts/test-smoke.js"
   },
   "keywords": [],
   "author": "",

@@ -1,0 +1,15 @@
+[package]
+name = "electron-rust-screenshot"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+screenshot-core = { path = "../screenshot-core" }
+napi = { version = "2.16", default-features = false, features = ["napi9"] }
+napi-derive = "2.16"
+
+[build-dependencies]
+napi-build = "2"
