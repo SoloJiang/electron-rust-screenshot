@@ -3,6 +3,7 @@ use crate::core::engine::Engine;
 use crate::core::types::{LogicalPoint, Rect};
 use crate::overlay::app::ScreenshotApp;
 use crate::overlay::gl::GlContext;
+use crate::platform::traits::PlatformOverlay;
 use egui_winit::State as EguiState;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -94,27 +95,7 @@ impl MultiWindowApp {
         if ignores == ws.ignores_mouse_events {
             return;
         }
-        #[cfg(target_os = "macos")]
-        unsafe {
-            use objc::msg_send;
-            use objc::sel;
-            use objc::sel_impl;
-            use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-            use objc::runtime::Object;
-            if let Ok(handle) = ws.window.window_handle() {
-                if let RawWindowHandle::AppKit(appkit) = handle.as_raw() {
-                    let ns_view: *mut Object = appkit.ns_view.as_ptr() as *mut Object;
-                    let ns_window: *mut Object = msg_send![ns_view, window];
-                    if !ns_window.is_null() {
-                        let _: () = msg_send![ns_window, setIgnoresMouseEvents: ignores];
-                    }
-                }
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = ignores;
-        }
+        crate::platform::Backend::set_mouse_passthrough(&ws.window, ignores);
         ws.ignores_mouse_events = ignores;
     }
 
@@ -168,30 +149,7 @@ impl ApplicationHandler for MultiWindowApp {
                 }
             };
 
-            #[cfg(target_os = "macos")]
-            unsafe {
-                use objc::class;
-                use objc::msg_send;
-                use objc::runtime::Object;
-                use objc::sel;
-                use objc::sel_impl;
-                use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-                let ns_app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
-                let policy: i64 = 0; // NSApplicationActivationPolicyRegular
-                let _: () = msg_send![ns_app, setActivationPolicy: policy];
-                let _: () = msg_send![ns_app, activateIgnoringOtherApps: true];
-                if let Ok(handle) = window.window_handle() {
-                    if let RawWindowHandle::AppKit(appkit) = handle.as_raw() {
-                        let ns_view: *mut Object = appkit.ns_view.as_ptr() as *mut Object;
-                        let ns_window: *mut Object = msg_send![ns_view, window];
-                        if !ns_window.is_null() {
-                            let level: i64 = 25; // NSStatusWindowLevel
-                            let _: () = msg_send![ns_window, setLevel: level];
-                            let _: () = msg_send![ns_window, makeKeyAndOrderFront: std::ptr::null_mut::<Object>()];
-                        }
-                    }
-                }
-            }
+            crate::platform::Backend::setup_window(&window);
 
             let gl = match unsafe { GlContext::new(&window, event_loop) } {
                 Ok(gl) => gl,

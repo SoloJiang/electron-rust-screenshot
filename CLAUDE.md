@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-本文件为 Claude Code (claude.ai/code) 在此仓库中工作提供指导。
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 项目概览
 
@@ -66,11 +66,16 @@ cd e2e && npx jest --runInBand specs/free-select.spec.ts
   - `app.rs` — `ScreenshotApp`（egui app）。每个窗口接收一个 `global_offset`，因此所有显示器都能渲染完整的 frame 集合以支持跨屏拖拽。
   - `gl.rs` — `GlContext` 辅助模块，使用 `glutin 0.32` + `glutin-winit 0.5`。
   - `save.rs` — `composite_image` 负责从所有相交屏幕拼接 captured frame，对 DPI 不一致的部分使用 Lanczos3 重采样，并对裁剪后的输出应用 mosaic。
-- **`platform/macos/`** — macOS 专属实现：
-  - `capture_cg.rs` — 基于 `CGDisplayCreateImage` 的 capture。对 retina/rotated display 使用 `CGImage::bytes_per_row()` 读取数据。
-  - `capture_sck.rs` — `ScreenCaptureKit` stub（当前 fallback 到 CGDisplay）。
-  - `window.rs` — 基于 `CGWindowListCopyWindowInfo` 的窗口枚举。
-  - `clipboard.rs` — `NSPasteboard` 图片复制。
+- **`platform/`** — 平台抽象层：
+  - `traits.rs` — 定义 `PlatformCapture`、`PlatformClipboard`、`PlatformOverlay`、`PlatformWindowEnumerator` trait，以及 `create_capture()` 工厂函数和 `Backend` 类型别名。
+  - `macos/` — macOS 专属实现：
+    - `capture_cg.rs` — 基于 `CGDisplayCreateImage` 的 capture。对 retina/rotated display 使用 `CGImage::bytes_per_row()` 读取数据。
+    - `capture_sck.rs` — `ScreenCaptureKit` 封装（当前内部 fallback 到 `MacOsCgCapture`）。
+    - `window.rs` — 基于 `CGWindowListCopyWindowInfo` 的窗口枚举。
+    - `clipboard.rs` — `NSPasteboard` 图片复制。
+    - `overlay_ext.rs` — `setup_window` 和 `set_mouse_passthrough` 的 objc 实现。
+    - `mod.rs` — `MacosBackend`，实现所有 platform traits。
+  - `windows/` — Windows 平台 stub（`WindowsBackend` 待实现）。
 - **`bridge/`**（位于 `crates/napi-bindings/src/`）— napi bindings：
   - `config.rs` — `ScreenshotConfig` napi struct。
   - `session.rs` — `ScreenshotSession` napi class。
@@ -82,7 +87,7 @@ cd e2e && npx jest --runInBand specs/free-select.spec.ts
 
 1. **每窗口 GL 隔离** — 每个 display 拥有独立的 `GlContext`、`egui::Context` 和 `Painter`。每次 `RedrawRequested` 前先调用 `make_current()`。`WindowState` 实现 `Drop`，在当前正确的 context 上调用 `painter.destroy()`。
 2. **跨显示器拖拽** — 所有窗口共享同一个 `Arc<Mutex<Engine>>`。窗口本地坐标先转换为全局逻辑坐标，再传入 engine 的鼠标事件处理函数。
-3. **编辑态交互锁定** — 选区确认后 engine 进入 `Editing` 状态，`update_interactivity()` 计算哪些窗口与选区相交，并通过 `objc`对剩余显示器调用 `setIgnoresMouseEvents:YES`。toolbar 只在包含选区中心的那台显示器上显示。
+3. **编辑态交互锁定** — 选区确认后 engine 进入 `Editing` 状态，`update_interactivity()` 计算哪些窗口与选区相交，并通过 `platform::Backend::set_mouse_passthrough` 对剩余显示器调用忽略鼠标事件。toolbar 只在包含选区中心的那台显示器上显示。
 4. **保存/合成** — `composite_image` 将选区与所有 screen frame 做 intersect，计算 union 输出图像（以 `dominant_dpi` 为基准），然后将每块裁剪区域叠加到最终图像上。
 
 ### 坐标系
@@ -101,7 +106,7 @@ E2E 套件（`e2e/`）通过 AppleScript 调用 `cliclick` 模拟鼠标/键盘�
 
 ### macOS Overlay 窗口行为
 
-`MultiWindowApp::resumed` 创建窗口时不使用 `Fullscreen::Borderless(None)`（以避免 macOS Space 切换问题），而是直接用各 display 的 logical bounds 设置 `inner_size` 和 `position`。在 macOS 上还通过 `objc` 执行：
+`MultiWindowApp::resumed` 创建窗口时不使用 `Fullscreen::Borderless(None)`（以避免 macOS Space 切换问题），而是直接用各 display 的 logical bounds 设置 `inner_size` 和 `position`。窗口创建后通过 `platform::macos::overlay_ext::setup_window` 执行：
 
 1. `NSApplication activateIgnoringOtherApps:YES`
 2. `setLevel:NSStatusWindowLevel` (25)

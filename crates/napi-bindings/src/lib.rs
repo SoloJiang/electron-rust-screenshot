@@ -30,30 +30,29 @@ pub fn start(config: Option<ScreenshotConfig>) -> Result<String> {
         save_path, format, quality, color, size, mosaic,
     )));
 
-    #[cfg(target_os = "macos")]
+    use screenshot_core::platform::traits::PlatformWindowEnumerator;
+    use screenshot_core::platform::{create_capture, Backend};
+
+    let capture = create_capture().map_err(|e| Error::from_reason(e.to_string()))?;
     {
-        use screenshot_core::platform::macos::capture_sck::MacOsSckCapture;
-        let capture = MacOsSckCapture::new();
-        {
-            let mut eng = engine.lock().unwrap();
-            eng.start(&capture);
-            if matches!(eng.state, screenshot_core::core::engine::EngineState::Idle) {
-                // Capture failed, drain events and return error
-                let mut events = Vec::new();
-                while let Some(evt) = eng.event_bus.try_recv() {
-                    events.push(evt);
-                }
-                if let Some(EngineEvent::Error { message, .. }) = events.into_iter().next_back() {
-                    return Err(Error::from_reason(message));
-                }
-                return Err(Error::from_reason("Capture failed".to_string()));
+        let mut eng = engine.lock().unwrap();
+        eng.start(capture.as_ref());
+        if matches!(eng.state, screenshot_core::core::engine::EngineState::Idle) {
+            // Capture failed, drain events and return error
+            let mut events = Vec::new();
+            while let Some(evt) = eng.event_bus.try_recv() {
+                events.push(evt);
             }
-            let windows = screenshot_core::platform::macos::window::enumerate_windows();
-            eng.detector = Some(WindowDetector::new(windows));
+            if let Some(EngineEvent::Error { message, .. }) = events.into_iter().next_back() {
+                return Err(Error::from_reason(message));
+            }
+            return Err(Error::from_reason("Capture failed".to_string()));
         }
-        let frames = engine.lock().unwrap().frames.clone();
-        OverlayManager::new(Arc::clone(&engine), frames).run();
+        let windows = Backend::enumerate_windows();
+        eng.detector = Some(WindowDetector::new(windows));
     }
+    let frames = engine.lock().unwrap().frames.clone();
+    OverlayManager::new(Arc::clone(&engine), frames).run();
 
     // Overlay closed, collect final event
     let mut events = Vec::new();

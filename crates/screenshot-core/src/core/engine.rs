@@ -140,37 +140,28 @@ impl Engine {
     }
 
     pub fn copy_to_clipboard(&mut self) {
-        #[cfg(target_os = "macos")]
-        {
-            match crate::overlay::save::composite_image(&self.frames, &self.editor) {
-                Ok(img) => match crate::platform::macos::clipboard::copy_image_to_clipboard(&img) {
-                    Ok(()) => {
-                        self.event_bus.emit(EngineEvent::Saved {
-                            path: "clipboard".into(),
-                            copied: true,
-                        });
-                    }
-                    Err(msg) => {
-                        self.event_bus.emit(EngineEvent::Error {
-                            code: ErrorCode::SaveFailed,
-                            message: msg,
-                        });
-                    }
-                },
+        use crate::platform::traits::PlatformClipboard;
+        match crate::overlay::save::composite_image(&self.frames, &self.editor) {
+            Ok(img) => match crate::platform::Backend::copy_image(&img) {
+                Ok(()) => {
+                    self.event_bus.emit(EngineEvent::Saved {
+                        path: "clipboard".into(),
+                        copied: true,
+                    });
+                }
                 Err(msg) => {
                     self.event_bus.emit(EngineEvent::Error {
                         code: ErrorCode::SaveFailed,
                         message: msg,
                     });
                 }
+            },
+            Err(msg) => {
+                self.event_bus.emit(EngineEvent::Error {
+                    code: ErrorCode::SaveFailed,
+                    message: msg,
+                });
             }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            self.event_bus.emit(EngineEvent::Error {
-                code: ErrorCode::SaveFailed,
-                message: "Clipboard not supported on this platform".into(),
-            });
         }
     }
 
