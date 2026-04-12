@@ -56,6 +56,12 @@ pub enum LayerOp {
     AddLayer { layer: Layer },
     DeleteLayer { layer: Layer },
     UpdateLayer { id: String, old: Layer, new: Layer },
+    UpdateSelectionAndLayers {
+        old_selection: Option<Rect>,
+        new_selection: Option<Rect>,
+        old_layers: Vec<Layer>,
+        new_layers: Vec<Layer>,
+    },
 }
 
 pub struct EditorState {
@@ -118,6 +124,11 @@ impl EditorState {
                         self.redo_stack.push(op);
                     }
                 }
+                LayerOp::UpdateSelectionAndLayers { old_selection, old_layers, .. } => {
+                    self.selection = old_selection.clone();
+                    self.layers = old_layers.clone();
+                    self.redo_stack.push(op);
+                }
             }
         }
     }
@@ -153,12 +164,271 @@ impl EditorState {
                         });
                     }
                 }
+                LayerOp::UpdateSelectionAndLayers { new_selection, new_layers, .. } => {
+                    self.selection = new_selection.clone();
+                    self.layers = new_layers.clone();
+                    self.undo_stack.push(op);
+                }
             }
         }
     }
 
     pub fn clear_preview(&mut self) {
         self.preview = None;
+    }
+
+    pub fn transform_selection(
+        original_selection: Rect,
+        layers: &[Layer],
+        kind: &super::types::ResizeHit,
+        delta: LogicalPoint,
+    ) -> (Rect, Vec<Layer>) {
+        use super::types::{Corner, Edge, ResizeHit};
+        const MIN_SIZE: f64 = 8.0;
+
+        let mut new_rect = original_selection;
+
+        match kind {
+            ResizeHit::Move => {
+                new_rect.x += delta.x;
+                new_rect.y += delta.y;
+            }
+            ResizeHit::ResizeEdge { edge } => match edge {
+                Edge::North => {
+                    new_rect.y += delta.y;
+                    new_rect.h -= delta.y;
+                    if new_rect.h < MIN_SIZE {
+                        let extra = MIN_SIZE - new_rect.h;
+                        new_rect.y -= extra;
+                        new_rect.h = MIN_SIZE;
+                    }
+                }
+                Edge::South => {
+                    new_rect.h += delta.y;
+                    if new_rect.h < MIN_SIZE {
+                        new_rect.h = MIN_SIZE;
+                    }
+                }
+                Edge::West => {
+                    new_rect.x += delta.x;
+                    new_rect.w -= delta.x;
+                    if new_rect.w < MIN_SIZE {
+                        let extra = MIN_SIZE - new_rect.w;
+                        new_rect.x -= extra;
+                        new_rect.w = MIN_SIZE;
+                    }
+                }
+                Edge::East => {
+                    new_rect.w += delta.x;
+                    if new_rect.w < MIN_SIZE {
+                        new_rect.w = MIN_SIZE;
+                    }
+                }
+            },
+            ResizeHit::ResizeCorner { corner } => match corner {
+                Corner::NW => {
+                    new_rect.x += delta.x;
+                    new_rect.y += delta.y;
+                    new_rect.w -= delta.x;
+                    new_rect.h -= delta.y;
+                    if new_rect.w < MIN_SIZE {
+                        let extra = MIN_SIZE - new_rect.w;
+                        new_rect.x -= extra;
+                        new_rect.w = MIN_SIZE;
+                    }
+                    if new_rect.h < MIN_SIZE {
+                        let extra = MIN_SIZE - new_rect.h;
+                        new_rect.y -= extra;
+                        new_rect.h = MIN_SIZE;
+                    }
+                }
+                Corner::NE => {
+                    new_rect.y += delta.y;
+                    new_rect.w += delta.x;
+                    new_rect.h -= delta.y;
+                    if new_rect.w < MIN_SIZE {
+                        new_rect.w = MIN_SIZE;
+                    }
+                    if new_rect.h < MIN_SIZE {
+                        let extra = MIN_SIZE - new_rect.h;
+                        new_rect.y -= extra;
+                        new_rect.h = MIN_SIZE;
+                    }
+                }
+                Corner::SW => {
+                    new_rect.x += delta.x;
+                    new_rect.w -= delta.x;
+                    new_rect.h += delta.y;
+                    if new_rect.w < MIN_SIZE {
+                        let extra = MIN_SIZE - new_rect.w;
+                        new_rect.x -= extra;
+                        new_rect.w = MIN_SIZE;
+                    }
+                    if new_rect.h < MIN_SIZE {
+                        new_rect.h = MIN_SIZE;
+                    }
+                }
+                Corner::SE => {
+                    new_rect.w += delta.x;
+                    new_rect.h += delta.y;
+                    if new_rect.w < MIN_SIZE {
+                        new_rect.w = MIN_SIZE;
+                    }
+                    if new_rect.h < MIN_SIZE {
+                        new_rect.h = MIN_SIZE;
+                    }
+                }
+            },
+        }
+
+        let sx = if original_selection.w == 0.0 {
+            0.0
+        } else {
+            new_rect.w / original_selection.w
+        };
+        let sy = if original_selection.h == 0.0 {
+            0.0
+        } else {
+            new_rect.h / original_selection.h
+        };
+        let tx = new_rect.x - original_selection.x;
+        let ty = new_rect.y - original_selection.y;
+
+        let new_layers: Vec<Layer> = layers
+            .iter()
+            .map(|l| transform_layer(l, original_selection, new_rect, tx, ty, sx, sy))
+            .collect();
+
+        (new_rect, new_layers)
+    }
+}
+
+fn transform_layer(
+    layer: &Layer,
+    original: Rect,
+    new_rect: Rect,
+    _tx: f64,
+    _ty: f64,
+    sx: f64,
+    sy: f64,
+) -> Layer {
+    let norm_x = |x: f64| -> f64 {
+        if original.w == 0.0 {
+            0.0
+        } else {
+            (x - original.x) / original.w
+        }
+    };
+    let norm_y = |y: f64| -> f64 {
+        if original.h == 0.0 {
+            0.0
+        } else {
+            (y - original.y) / original.h
+        }
+    };
+    let denorm_x = |nx: f64| -> f64 { new_rect.x + nx * new_rect.w };
+    let denorm_y = |ny: f64| -> f64 { new_rect.y + ny * new_rect.h };
+
+    match layer {
+        Layer::ShapeRect {
+            id,
+            rect,
+            stroke_width,
+            color,
+        } => Layer::ShapeRect {
+            id: id.clone(),
+            rect: Rect {
+                x: denorm_x(norm_x(rect.x)),
+                y: denorm_y(norm_y(rect.y)),
+                w: rect.w * sx,
+                h: rect.h * sy,
+            },
+            stroke_width: *stroke_width,
+            color: *color,
+        },
+        Layer::ShapeEllipse {
+            id,
+            rect,
+            stroke_width,
+            color,
+        } => Layer::ShapeEllipse {
+            id: id.clone(),
+            rect: Rect {
+                x: denorm_x(norm_x(rect.x)),
+                y: denorm_y(norm_y(rect.y)),
+                w: rect.w * sx,
+                h: rect.h * sy,
+            },
+            stroke_width: *stroke_width,
+            color: *color,
+        },
+        Layer::Arrow {
+            id,
+            start,
+            end,
+            stroke_width,
+            color,
+        } => Layer::Arrow {
+            id: id.clone(),
+            start: LogicalPoint {
+                x: denorm_x(norm_x(start.x)),
+                y: denorm_y(norm_y(start.y)),
+            },
+            end: LogicalPoint {
+                x: denorm_x(norm_x(end.x)),
+                y: denorm_y(norm_y(end.y)),
+            },
+            stroke_width: *stroke_width,
+            color: *color,
+        },
+        Layer::BrushPath {
+            id,
+            points,
+            stroke_width,
+            color,
+        } => Layer::BrushPath {
+            id: id.clone(),
+            points: points
+                .iter()
+                .map(|p| LogicalPoint {
+                    x: denorm_x(norm_x(p.x)),
+                    y: denorm_y(norm_y(p.y)),
+                })
+                .collect(),
+            stroke_width: *stroke_width,
+            color: *color,
+        },
+        Layer::MosaicPath {
+            id,
+            points,
+            block_size,
+        } => Layer::MosaicPath {
+            id: id.clone(),
+            points: points
+                .iter()
+                .map(|p| LogicalPoint {
+                    x: denorm_x(norm_x(p.x)),
+                    y: denorm_y(norm_y(p.y)),
+                })
+                .collect(),
+            block_size: *block_size,
+        },
+        Layer::Text {
+            id,
+            pos,
+            text,
+            font_size,
+            color,
+        } => Layer::Text {
+            id: id.clone(),
+            pos: LogicalPoint {
+                x: denorm_x(norm_x(pos.x)),
+                y: denorm_y(norm_y(pos.y)),
+            },
+            text: text.clone(),
+            font_size: *font_size,
+            color: *color,
+        },
     }
 }
 
@@ -223,5 +493,112 @@ mod tests {
 
         state.redo();
         assert_eq!(state.layers[0], updated);
+    }
+
+    #[test]
+    fn transform_selection_move_preserves_relative_positions() {
+        let original = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let layers = vec![
+            Layer::ShapeRect {
+                id: Uuid::new_v4().to_string(),
+                rect: Rect::new(10.0, 10.0, 20.0, 20.0),
+                stroke_width: 2.0,
+                color: Color::new(255, 0, 0, 255),
+            },
+            Layer::Arrow {
+                id: Uuid::new_v4().to_string(),
+                start: LogicalPoint::new(0.0, 0.0),
+                end: LogicalPoint::new(100.0, 100.0),
+                stroke_width: 2.0,
+                color: Color::new(255, 0, 0, 255),
+            },
+        ];
+
+        let (new_rect, new_layers) = EditorState::transform_selection(
+            original,
+            &layers,
+            &crate::core::types::ResizeHit::Move,
+            LogicalPoint::new(10.0, 20.0),
+        );
+
+        assert_eq!(new_rect, Rect::new(10.0, 20.0, 100.0, 100.0));
+
+        if let Layer::ShapeRect { rect, .. } = &new_layers[0] {
+            assert_eq!(*rect, Rect::new(20.0, 30.0, 20.0, 20.0));
+        } else {
+            panic!("expected ShapeRect");
+        }
+
+        if let Layer::Arrow { start, end, .. } = &new_layers[1] {
+            assert_eq!(*start, LogicalPoint::new(10.0, 20.0));
+            assert_eq!(*end, LogicalPoint::new(110.0, 120.0));
+        } else {
+            panic!("expected Arrow");
+        }
+    }
+
+    #[test]
+    fn transform_selection_scale_scales_layers() {
+        let original = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let layers = vec![Layer::ShapeRect {
+            id: Uuid::new_v4().to_string(),
+            rect: Rect::new(10.0, 0.0, 20.0, 50.0),
+            stroke_width: 2.0,
+            color: Color::new(255, 0, 0, 255),
+        }];
+
+        let (new_rect, new_layers) = EditorState::transform_selection(
+            original,
+            &layers,
+            &crate::core::types::ResizeHit::ResizeEdge {
+                edge: crate::core::types::Edge::East,
+            },
+            LogicalPoint::new(100.0, 0.0),
+        );
+
+        assert_eq!(new_rect, Rect::new(0.0, 0.0, 200.0, 100.0));
+
+        if let Layer::ShapeRect { rect, .. } = &new_layers[0] {
+            assert_eq!(*rect, Rect::new(20.0, 0.0, 40.0, 50.0));
+        } else {
+            panic!("expected ShapeRect");
+        }
+    }
+
+    #[test]
+    fn undo_redo_update_selection_and_layers() {
+        let mut state = EditorState::new(Color::new(255, 0, 0, 255), 3.0, 8.0);
+        let old_selection = Some(Rect::new(0.0, 0.0, 100.0, 100.0));
+        let new_selection = Some(Rect::new(10.0, 10.0, 200.0, 200.0));
+        let id = Uuid::new_v4().to_string();
+        let old_layers = vec![Layer::ShapeRect {
+            id: id.clone(),
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            stroke_width: 2.0,
+            color: Color::new(255, 0, 0, 255),
+        }];
+        let new_layers = vec![Layer::ShapeRect {
+            id: id.clone(),
+            rect: Rect::new(10.0, 10.0, 20.0, 20.0),
+            stroke_width: 4.0,
+            color: Color::new(0, 255, 0, 255),
+        }];
+
+        state.selection = new_selection.clone();
+        state.layers = new_layers.clone();
+        state.undo_stack.push(LayerOp::UpdateSelectionAndLayers {
+            old_selection: old_selection.clone(),
+            new_selection: new_selection.clone(),
+            old_layers: old_layers.clone(),
+            new_layers: new_layers.clone(),
+        });
+
+        state.undo();
+        assert_eq!(state.selection, old_selection);
+        assert_eq!(state.layers, old_layers);
+
+        state.redo();
+        assert_eq!(state.selection, new_selection);
+        assert_eq!(state.layers, new_layers);
     }
 }
