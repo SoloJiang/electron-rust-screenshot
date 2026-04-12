@@ -52,6 +52,9 @@ impl Rect {
     }
 
     pub fn hit_test_resize_handle(&self, p: LogicalPoint, handle_size: f64) -> Option<ResizeHit> {
+        if self.is_empty() {
+            return None;
+        }
         let half = handle_size / 2.0;
         let outer_x = self.x - half;
         let outer_y = self.y - half;
@@ -288,5 +291,45 @@ mod tests {
         let r = Rect::new(100.0, 100.0, 100.0, 100.0);
         assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(0.0, 0.0), 20.0), None);
         assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(250.0, 150.0), 20.0), None);
+    }
+
+    #[test]
+    fn resize_hit_empty_rect_is_none() {
+        let r = Rect::new(100.0, 100.0, 0.0, 50.0);
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(100.0, 125.0), 20.0), None);
+    }
+
+    #[test]
+    fn resize_hit_boundary_between_zones() {
+        let r = Rect::new(100.0, 100.0, 100.0, 100.0);
+        let half = 10.0;
+        // Exactly at inner corner threshold; code uses < so it falls through to Move
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(r.x + half, r.y + half), 20.0),
+            Some(ResizeHit::Move)
+        );
+    }
+
+    #[test]
+    fn resize_hit_pure_edge_away_from_corners() {
+        let r = Rect::new(100.0, 100.0, 100.0, 100.0);
+        let half = 10.0;
+        let x = r.x - half + 1.0;
+        let y = r.y + r.h / 2.0;
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(x, y), 20.0),
+            Some(ResizeHit::ResizeEdge { edge: Edge::West })
+        );
+    }
+
+    #[test]
+    fn resize_hit_handle_size_zero() {
+        let r = Rect::new(100.0, 100.0, 100.0, 100.0);
+        // Strictly inside -> Move
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(150.0, 150.0), 0.0), Some(ResizeHit::Move));
+        // Exactly on lower border -> inside due to contains lower-bound inclusivity, so Move
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(100.0, 100.0), 0.0), Some(ResizeHit::Move));
+        // Exactly on upper x border -> outside due to contains upper-bound exclusivity, so None
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(200.0, 150.0), 0.0), None);
     }
 }
