@@ -1,6 +1,6 @@
 use crate::core::capture::ScreenFrame;
 use crate::core::engine::Engine;
-use crate::core::types::{Color, LogicalPoint, Rect};
+use crate::core::types::{Color, Corner, Edge, LogicalPoint, Rect, ResizeHit};
 use crate::overlay::toolbar::draw_toolbar;
 use egui::{Color32, Rect as EguiRect, Rounding, Stroke};
 use std::sync::{Arc, Mutex};
@@ -138,37 +138,73 @@ impl ScreenshotApp {
                         .rect_stroke(r, Rounding::ZERO, Stroke::new(1.0, Color32::WHITE));
                 }
                 crate::core::engine::EngineState::Editing => {
-                    // Only allow editing mouse interaction inside the selection area.
-                    // This effectively locks the other monitor(s) when editing a single-screen selection.
-                    let in_selection = engine.editor.selection.map(|sel| {
-                        pointer.latest_pos().map(|pos| {
-                            let logical = LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y);
-                            sel.contains(logical)
-                        }).unwrap_or(false)
-                    }).unwrap_or(true);
-
-                    if in_selection {
-                        if pointer.any_pressed() {
-                            if let Some(pos) = pointer.press_origin() {
-                                engine.on_edit_mouse_down(LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y));
-                            }
-                        }
-                        if pointer.is_decidedly_dragging() {
-                            if let Some(pos) = pointer.latest_pos() {
-                                engine.on_edit_mouse_drag(LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y));
-                            }
-                        }
-                        if pointer.any_released() {
-                            if let Some(pos) = pointer.latest_pos() {
-                                engine.on_edit_mouse_up(LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y));
-                            }
-                        }
-                    }
-
-                    // Uniform mask over entire screen
-                    ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
-
                     if let Some(sel) = engine.editor.selection {
+                        let logical_pos = pointer.latest_pos().map(|pos| {
+                            LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y)
+                        });
+                        let resize_hit = logical_pos.and_then(|p| sel.hit_test_resize_handle(p, 8.0));
+
+                        // Cursor feedback
+                        if let Some(hit) = resize_hit {
+                            ui.ctx().set_cursor_icon(match hit {
+                                ResizeHit::Move => egui::CursorIcon::Move,
+                                ResizeHit::ResizeEdge { edge: Edge::North | Edge::South } => {
+                                    egui::CursorIcon::ResizeVertical
+                                }
+                                ResizeHit::ResizeEdge { edge: Edge::East | Edge::West } => {
+                                    egui::CursorIcon::ResizeHorizontal
+                                }
+                                ResizeHit::ResizeCorner { corner: Corner::NW | Corner::SE } => {
+                                    egui::CursorIcon::ResizeNwSe
+                                }
+                                ResizeHit::ResizeCorner { corner: Corner::NE | Corner::SW } => {
+                                    egui::CursorIcon::ResizeNeSw
+                                }
+                            });
+                        } else {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+                        }
+
+                        let in_selection = logical_pos.map(|p| sel.contains(p)).unwrap_or(true);
+                        let in_transform_zone = resize_hit.is_some();
+
+                        // Event routing: if we are already transforming, continue it
+                        if engine.selection_transform.is_some() {
+                            if pointer.is_decidedly_dragging() {
+                                if let Some(pos) = logical_pos {
+                                    engine.on_selection_transform_drag(pos);
+                                }
+                            }
+                            if pointer.any_released() {
+                                if let Some(pos) = logical_pos {
+                                    engine.on_selection_transform_end(pos);
+                                }
+                            }
+                        } else if in_selection || in_transform_zone {
+                            if pointer.any_pressed() {
+                                if let Some(pos) = logical_pos {
+                                    if let Some(hit) = resize_hit {
+                                        engine.on_selection_transform_start(pos, hit);
+                                    } else if sel.contains(pos) {
+                                        engine.on_edit_mouse_down(pos);
+                                    }
+                                }
+                            }
+                            if pointer.is_decidedly_dragging() {
+                                if let Some(pos) = logical_pos {
+                                    engine.on_edit_mouse_drag(pos);
+                                }
+                            }
+                            if pointer.any_released() {
+                                if let Some(pos) = logical_pos {
+                                    engine.on_edit_mouse_up(pos);
+                                }
+                            }
+                        }
+
+                        // Uniform mask over entire screen
+                        ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
+
                         // Unmask the selected region
                         self.draw_unmasked_region(ui.painter(), sel, offset);
                         // White selection border
@@ -179,8 +215,26 @@ impl ScreenshotApp {
                             Stroke::new(1.0, Color32::WHITE),
                         );
 
-                        // Toolbar as a floating window just below the selection so it stays
-                        // visible regardless of the multi-monitor union rect size.
+                        // Draw 8 resize handles
+                        let handle_radius = 4.0;
+                        let handle_stroke = Stroke::new(1.0, Color32::from_rgb(0, 120, 255));
+                        let handle_positions = [
+                            (sel.x, sel.y),                         // NW
+                            (sel.x + sel.w / 2.0, sel.y),           // N
+                            (sel.x + sel.w, sel.y),                 // NE
+                            (sel.x + sel.w, sel.y + sel.h / 2.0),   // E
+                            (sel.x + sel.w, sel.y + sel.h),         // SE
+                            (sel.x + sel.w / 2.0, sel.y + sel.h),   // S
+                            (sel.x, sel.y + sel.h),                 // SW
+                            (sel.x, sel.y + sel.h / 2.0),           // W
+                        ];
+                        for (hx, hy) in handle_positions {
+                            let hp = egui::pos2((hx - offset.x) as f32, (hy - offset.y) as f32);
+                            ui.painter().circle_filled(hp, handle_radius, Color32::WHITE);
+                            ui.painter().circle_stroke(hp, handle_radius, handle_stroke);
+                        }
+
+                        // Toolbar as a floating window just below the selection
                         if show_toolbar {
                             let toolbar_pos = egui::pos2(
                                 (sel.x - offset.x) as f32,
@@ -199,16 +253,18 @@ impl ScreenshotApp {
                                 engine.save();
                             }
                         }
-                    }
 
-                    // Draw committed layers
-                    for layer in &engine.editor.layers {
-                        draw_layer(ui.painter(), layer, offset);
-                    }
+                        // Draw committed layers
+                        for layer in &engine.editor.layers {
+                            draw_layer(ui.painter(), layer, offset);
+                        }
 
-                    // Draw preview layer
-                    if let Some(preview) = &engine.editor.preview {
-                        draw_layer(ui.painter(), preview, offset);
+                        // Draw preview layer
+                        if let Some(preview) = &engine.editor.preview {
+                            draw_layer(ui.painter(), preview, offset);
+                        }
+                    } else {
+                        ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
                     }
                 }
                 _ => {}

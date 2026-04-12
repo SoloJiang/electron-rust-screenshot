@@ -106,12 +106,14 @@ impl Engine {
     }
 
     pub fn cancel(&mut self) {
+        self.selection_transform = None;
         self.state = EngineState::Idle;
         self.should_close = true;
         self.event_bus.emit(EngineEvent::Cancelled);
     }
 
     pub fn select_region(&mut self, screen_id: String, rect: Rect) {
+        self.selection_transform = None;
         if rect.w > 8.0 && rect.h > 8.0 {
             self.editor.selection = Some(rect);
             self.state = EngineState::Editing;
@@ -123,6 +125,7 @@ impl Engine {
     }
 
     pub fn save(&mut self) {
+        self.selection_transform = None;
         self.state = EngineState::Saving;
         match composite_and_save(
             &self.frames,
