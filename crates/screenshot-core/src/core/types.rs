@@ -50,6 +50,53 @@ impl Rect {
     pub fn is_empty(&self) -> bool {
         self.w <= 0.0 || self.h <= 0.0
     }
+
+    pub fn hit_test_resize_handle(&self, p: LogicalPoint, handle_size: f64) -> Option<ResizeHit> {
+        let half = handle_size / 2.0;
+        let outer_x = self.x - half;
+        let outer_y = self.y - half;
+        let outer_w = self.w + handle_size;
+        let outer_h = self.h + handle_size;
+        let outer = Rect::new(outer_x, outer_y, outer_w, outer_h);
+        if !outer.contains(p) {
+            return None;
+        }
+
+        // Corners (priority: corner > edge > interior)
+        if p.x < self.x + half && p.y < self.y + half {
+            return Some(ResizeHit::ResizeCorner { corner: Corner::NW });
+        }
+        if p.x >= self.x + self.w - half && p.y < self.y + half {
+            return Some(ResizeHit::ResizeCorner { corner: Corner::NE });
+        }
+        if p.x < self.x + half && p.y >= self.y + self.h - half {
+            return Some(ResizeHit::ResizeCorner { corner: Corner::SW });
+        }
+        if p.x >= self.x + self.w - half && p.y >= self.y + self.h - half {
+            return Some(ResizeHit::ResizeCorner { corner: Corner::SE });
+        }
+
+        // Edges
+        if p.y < self.y + half {
+            return Some(ResizeHit::ResizeEdge { edge: Edge::North });
+        }
+        if p.y >= self.y + self.h - half {
+            return Some(ResizeHit::ResizeEdge { edge: Edge::South });
+        }
+        if p.x < self.x + half {
+            return Some(ResizeHit::ResizeEdge { edge: Edge::West });
+        }
+        if p.x >= self.x + self.w - half {
+            return Some(ResizeHit::ResizeEdge { edge: Edge::East });
+        }
+
+        // Interior move area
+        if self.contains(p) {
+            return Some(ResizeHit::Move);
+        }
+
+        None
+    }
 }
 
 /// Subtract `cut` from `target`, returning the remaining non-overlapping rectangles.
@@ -144,6 +191,29 @@ pub struct ScreenInfo {
     pub dpi_scale: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Edge {
+    North,
+    South,
+    East,
+    West,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Corner {
+    NW,
+    NE,
+    SW,
+    SE,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ResizeHit {
+    Move,
+    ResizeEdge { edge: Edge },
+    ResizeCorner { corner: Corner },
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct DetectedWindow {
     pub id: String,
@@ -187,5 +257,36 @@ mod tests {
         let a = Rect::new(0.0, 0.0, 10.0, 10.0);
         let b = Rect::new(20.0, 20.0, 10.0, 10.0);
         assert!(a.intersection(b).is_none());
+    }
+
+    #[test]
+    fn resize_hit_center_is_move() {
+        let r = Rect::new(100.0, 100.0, 100.0, 100.0);
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(150.0, 150.0), 20.0), Some(ResizeHit::Move));
+    }
+
+    #[test]
+    fn resize_hit_corners() {
+        let r = Rect::new(100.0, 100.0, 100.0, 100.0);
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(105.0, 105.0), 20.0), Some(ResizeHit::ResizeCorner { corner: Corner::NW }));
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(195.0, 105.0), 20.0), Some(ResizeHit::ResizeCorner { corner: Corner::NE }));
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(105.0, 195.0), 20.0), Some(ResizeHit::ResizeCorner { corner: Corner::SW }));
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(195.0, 195.0), 20.0), Some(ResizeHit::ResizeCorner { corner: Corner::SE }));
+    }
+
+    #[test]
+    fn resize_hit_edges() {
+        let r = Rect::new(100.0, 100.0, 100.0, 100.0);
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(150.0, 105.0), 20.0), Some(ResizeHit::ResizeEdge { edge: Edge::North }));
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(150.0, 195.0), 20.0), Some(ResizeHit::ResizeEdge { edge: Edge::South }));
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(105.0, 150.0), 20.0), Some(ResizeHit::ResizeEdge { edge: Edge::West }));
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(195.0, 150.0), 20.0), Some(ResizeHit::ResizeEdge { edge: Edge::East }));
+    }
+
+    #[test]
+    fn resize_hit_outside_is_none() {
+        let r = Rect::new(100.0, 100.0, 100.0, 100.0);
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(0.0, 0.0), 20.0), None);
+        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(250.0, 150.0), 20.0), None);
     }
 }
