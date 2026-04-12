@@ -100,7 +100,6 @@ impl ScreenshotApp {
             if pointer.any_released() {
                 if let Some(pos) = pointer.latest_pos() {
                     engine.on_mouse_up(
-                        "primary".into(),
                         LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y),
                     );
                 }

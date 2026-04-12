@@ -244,7 +244,17 @@ impl Engine {
         }
     }
 
-    pub fn on_mouse_up(&mut self, screen_id: String, pos: LogicalPoint) {
+    pub fn screen_at_point(&self, pos: LogicalPoint) -> Option<String> {
+        self.screens
+            .iter()
+            .find(|s| s.logical_bounds.contains(pos))
+            .map(|s| s.id.clone())
+    }
+
+    pub fn on_mouse_up(&mut self, pos: LogicalPoint) {
+        let screen_id = self
+            .screen_at_point(pos)
+            .unwrap_or_else(|| "primary".to_string());
         if let EngineState::FreeSelecting { start, .. } = self.state {
             let dx = (pos.x - start.x).abs();
             let dy = (pos.y - start.y).abs();
@@ -454,5 +464,60 @@ mod tests {
 
         engine.editor.redo();
         assert_eq!(engine.editor.layers.len(), 1);
+    }
+
+    #[test]
+    fn engine_screen_at_point_finds_correct_screen() {
+        let mut engine = Engine::new(
+            "/tmp/test.png".into(),
+            "png".into(),
+            90,
+            Color::new(255, 0, 0, 255),
+            3.0,
+            8.0,
+        );
+        engine.screens = vec![
+            ScreenInfo {
+                id: "left".into(),
+                name: "Left".into(),
+                logical_bounds: Rect::new(0.0, 0.0, 1000.0, 500.0),
+                dpi_scale: 2.0,
+            },
+            ScreenInfo {
+                id: "right".into(),
+                name: "Right".into(),
+                logical_bounds: Rect::new(1000.0, 0.0, 1000.0, 500.0),
+                dpi_scale: 2.0,
+            },
+        ];
+        assert_eq!(engine.screen_at_point(LogicalPoint::new(100.0, 100.0)), Some("left".into()));
+        assert_eq!(engine.screen_at_point(LogicalPoint::new(1100.0, 100.0)), Some("right".into()));
+        assert_eq!(engine.screen_at_point(LogicalPoint::new(9999.0, 9999.0)), None);
+    }
+
+    #[test]
+    fn engine_mouse_up_auto_selects_screen() {
+        let mut engine = Engine::new(
+            "/tmp/test.png".into(),
+            "png".into(),
+            90,
+            Color::new(255, 0, 0, 255),
+            3.0,
+            8.0,
+        );
+        engine.screens = vec![
+            ScreenInfo {
+                id: "left".into(),
+                name: "Left".into(),
+                logical_bounds: Rect::new(0.0, 0.0, 1000.0, 500.0),
+                dpi_scale: 1.0,
+            },
+        ];
+        engine.state = EngineState::OverlayRunning;
+        // trigger free-select
+        engine.on_mouse_down(LogicalPoint::new(10.0, 10.0));
+        engine.on_mouse_drag(LogicalPoint::new(100.0, 100.0));
+        engine.on_mouse_up(LogicalPoint::new(100.0, 100.0));
+        assert!(matches!(engine.state, EngineState::Editing));
     }
 }

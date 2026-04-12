@@ -332,13 +332,7 @@ impl ApplicationHandler for OverlayApp {
                             let mut engine = self.engine.lock().unwrap();
                             engine.on_mouse_down(start_pt);
                             engine.on_mouse_drag(end_pt);
-                            let screen_id = self
-                                .screenshot_app
-                                .as_ref()
-                                .and_then(|app| app.frames.first())
-                                .map(|f| f.screen_id.clone())
-                                .unwrap_or_else(|| "primary".into());
-                            engine.on_mouse_up(screen_id, end_pt);
+                            engine.on_mouse_up(end_pt);
                             if std::env::var("SCREENSHOT_TEST_MOCK_DRAG_NO_SAVE").is_err() {
                                 if let Some(app) = &self.screenshot_app {
                                     engine.save(&app.frames);
