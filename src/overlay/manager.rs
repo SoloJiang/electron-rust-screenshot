@@ -297,6 +297,7 @@ impl ApplicationHandler for MultiWindowApp {
                 }
             }
             WindowEvent::RedrawRequested => {
+                ws.gl_context.make_current();
                 let frame_start = std::time::Instant::now();
                 let size = ws.window.inner_size();
                 ws.gl_context.resize(size.width, size.height);

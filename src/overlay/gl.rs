@@ -79,4 +79,8 @@ impl GlContext {
     pub fn swap_buffers(&self) {
         self.gl_surface.swap_buffers(&self.gl_context).unwrap();
     }
+
+    pub fn make_current(&self) {
+        let _ = self.gl_context.make_current(&self.gl_surface);
+    }
 }
