@@ -1,7 +1,7 @@
 use crate::core::capture::{CaptureError, PlatformCapture, ScreenFrame};
 use crate::core::types::Rect;
 use core_graphics::display::{
-    CGDisplayBounds, CGDisplayCreateImage, CGDisplayPixelsWide, CGGetActiveDisplayList,
+    CGDisplayBounds, CGDisplayCreateImage, CGGetActiveDisplayList,
 };
 use core_graphics::image::CGImage;
 use foreign_types::ForeignType;
@@ -62,17 +62,37 @@ impl PlatformCapture for MacOsCgCapture {
             let bounds = unsafe { CGDisplayBounds(id) };
             let cg_img = unsafe { CGDisplayCreateImage(id) };
             if cg_img.is_null() {
+                eprintln!("[capture_cg] display {}: CGDisplayCreateImage returned null", id);
                 continue;
             }
             let cg_image = unsafe { CGImage::from_ptr(cg_img) };
             let rgba = Self::cg_image_to_rgba(&cg_image);
-            let pixel_width = unsafe { CGDisplayPixelsWide(id) as f64 };
             let width = bounds.size.width;
+            let height = bounds.size.height;
+            // CGDisplayPixelsWide is unreliable on Retina/rotated displays;
+            // derive dpi_scale directly from the captured image vs logical bounds.
             let dpi_scale = if width > 0.0 {
-                pixel_width / width
+                rgba.width() as f64 / width
             } else {
                 1.0
             };
+            let rotation = unsafe { core_graphics::display::CGDisplayRotation(id) };
+            eprintln!(
+                "[capture_cg] display {}: bounds={:.0},{:.0} {:.0}x{:.0} img={}x{} rotation={:.0} dpi_scale={:.3}",
+                id,
+                bounds.origin.x,
+                bounds.origin.y,
+                width,
+                height,
+                rgba.width(),
+                rgba.height(),
+                rotation,
+                dpi_scale
+            );
+
+            // Note: CGDisplayCreateImage already returns the image in the
+            // user-visible orientation (matches logical bounds), so no explicit
+            // rotation is needed even for portrait displays.
 
             frames.push(ScreenFrame {
                 screen_id: id.to_string(),
@@ -91,5 +111,35 @@ impl PlatformCapture for MacOsCgCapture {
             return Err(CaptureError::NoDisplay);
         }
         Ok(frames)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn debug_print_capture() {
+        let cap = MacOsCgCapture::new();
+        match cap.capture_all_screens() {
+            Ok(frames) => {
+                eprintln!("[debug_print_capture] captured {} screens", frames.len());
+                for f in &frames {
+                    eprintln!(
+                        "[debug_print_capture] screen {}: logical_bounds={:.0},{:.0} {:.0}x{:.0} image={}x{} dpi_scale={:.3}",
+                        f.screen_id,
+                        f.logical_bounds.x,
+                        f.logical_bounds.y,
+                        f.logical_bounds.w,
+                        f.logical_bounds.h,
+                        f.image.width(),
+                        f.image.height(),
+                        f.dpi_scale
+                    );
+                }
+            }
+            Err(e) => eprintln!("[debug_print_capture] capture failed: {:?}", e),
+        }
     }
 }

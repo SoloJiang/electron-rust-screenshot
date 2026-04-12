@@ -110,9 +110,15 @@ pub fn enumerate_windows() -> Vec<DetectedWindow> {
         });
     }
 
-    // Debug: print first few windows to verify order
-    for (i, w) in windows.iter().rev().take(5).enumerate() {
-        eprintln!("[enumerate_windows] index {} (from front): z={}, title={:?}, bounds={:?}", i, w.z_order, w.title, w.bounds);
+    // Debug: print all windows with size > 100x100 to help diagnose bounds issues
+    eprintln!("[enumerate_windows] total={}", windows.len());
+    for (i, w) in windows.iter().rev().enumerate() {
+        if w.bounds.w > 100.0 && w.bounds.h > 100.0 {
+            eprintln!(
+                "[enumerate_windows] #{} z={} title={:?} bounds={:.0},{:.0} {:.0}x{:.0}",
+                i, w.z_order, w.title, w.bounds.x, w.bounds.y, w.bounds.w, w.bounds.h
+            );
+        }
     }
 
     windows
