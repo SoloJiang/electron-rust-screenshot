@@ -147,6 +147,8 @@ impl ScreenshotApp {
                         let in_selection = logical_pos.map(|p| sel.contains(p)).unwrap_or(true);
                         let in_transform_zone = resize_hit.is_some();
 
+                        let can_move = engine.editor.active_tool == crate::core::editor::Tool::Select;
+
                         // Event routing
                         if engine.selection_transform.is_some() {
                             if pointer.is_decidedly_dragging() {
@@ -163,7 +165,7 @@ impl ScreenshotApp {
                             if pointer.any_pressed() {
                                 if let Some(pos) = logical_pos {
                                     match resize_hit {
-                                        Some(ResizeHit::Move) => {
+                                        Some(ResizeHit::Move) if can_move => {
                                             engine.on_edit_mouse_down(pos);
                                         }
                                         Some(hit) => {
@@ -180,7 +182,7 @@ impl ScreenshotApp {
                             if pointer.is_decidedly_dragging() {
                                 if let Some(pos) = logical_pos {
                                     let is_move_zone = resize_hit == Some(ResizeHit::Move);
-                                    if engine.edit_drag_start.is_some() && is_move_zone {
+                                    if engine.edit_drag_start.is_some() && is_move_zone && can_move {
                                         engine.abort_edit_drag();
                                         engine.on_selection_transform_start(pos, ResizeHit::Move);
                                     } else {
@@ -237,12 +239,12 @@ impl ScreenshotApp {
 
                         // Unmask the selected region
                         self.draw_unmasked_region(ui.painter(), sel, offset);
-                        // White selection border
+                        // Cyan selection border to distinguish from blue handles
                         let sel_rect = egui_rect_from_logical(sel, offset);
                         ui.painter().rect_stroke(
                             sel_rect,
                             Rounding::ZERO,
-                            Stroke::new(1.0, Color32::WHITE),
+                            Stroke::new(1.5, Color32::from_rgb(0, 255, 255)),
                         );
 
                         // Draw 8 resize handles

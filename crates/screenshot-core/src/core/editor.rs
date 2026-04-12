@@ -2,6 +2,7 @@ use super::types::{Color, LogicalPoint, Rect};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
+    Select,
     Rect,
     Ellipse,
     Arrow,
@@ -83,7 +84,7 @@ impl EditorState {
             layers: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
-            active_tool: Tool::Rect,
+            active_tool: Tool::Select,
             tool_color: default_color,
             tool_size: default_size,
             mosaic_block_size,

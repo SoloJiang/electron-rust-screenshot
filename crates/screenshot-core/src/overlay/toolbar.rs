@@ -5,6 +5,7 @@ pub fn draw_toolbar(ui: &mut Ui, editor: &mut EditorState) -> bool {
     let mut save_clicked = false;
     ui.horizontal(|ui| {
         let tools = [
+            ("S:Select", Tool::Select),
             ("1:Rect", Tool::Rect),
             ("2:Ellipse", Tool::Ellipse),
             ("3:Arrow", Tool::Arrow),

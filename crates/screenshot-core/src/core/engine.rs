@@ -397,6 +397,7 @@ fn build_preview(
             points: vec![start, end],
             block_size: mosaic_block_size,
         }),
+        super::editor::Tool::Select => None,
         super::editor::Tool::Text => None, // handled later via text input
     }
 }

@@ -295,6 +295,9 @@ impl ApplicationHandler for MultiWindowApp {
                                 "c" | "C" => {
                                     engine.copy_to_clipboard();
                                 }
+                                "s" | "S" => {
+                                    engine.editor.active_tool = crate::core::editor::Tool::Select
+                                }
                                 "1" => engine.editor.active_tool = crate::core::editor::Tool::Rect,
                                 "2" => {
                                     engine.editor.active_tool = crate::core::editor::Tool::Ellipse
