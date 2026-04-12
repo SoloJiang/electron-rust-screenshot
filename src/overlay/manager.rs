@@ -52,6 +52,7 @@ struct MultiWindowApp {
     start_time: Option<std::time::Instant>,
     mock_drag_done: bool,
     focus_attempts: u32,
+    key_window_id: Option<winit::window::WindowId>,
     modifiers: winit::keyboard::ModifiersState,
     pending_frames: Vec<ScreenFrame>,
 }
@@ -67,6 +68,7 @@ impl MultiWindowApp {
             start_time: None,
             mock_drag_done: false,
             focus_attempts: 0,
+            key_window_id: None,
             modifiers: winit::keyboard::ModifiersState::empty(),
             pending_frames: Vec::new(),
         }
@@ -164,9 +166,10 @@ impl ApplicationHandler for MultiWindowApp {
             }
 
             let gl = unsafe { GlContext::new(&window, event_loop) };
+            let viewport_id = egui::ViewportId::from_hash_of(&frame.screen_id);
             let egui_state = EguiState::new(
                 self.egui_ctx.clone(),
-                egui::ViewportId::default(),
+                viewport_id,
                 &window,
                 Some(window.scale_factor() as f32),
                 None,
@@ -188,6 +191,9 @@ impl ApplicationHandler for MultiWindowApp {
                 last_egui_paint_ms: 0.0,
             };
             let id = ws.window.id();
+            if self.key_window_id.is_none() {
+                self.key_window_id = Some(id);
+            }
             self.windows.insert(id, ws);
         }
 
@@ -343,31 +349,34 @@ impl ApplicationHandler for MultiWindowApp {
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         for ws in self.windows.values() {
             ws.window.request_redraw();
-            if self.focus_attempts < 60 {
-                ws.window.focus_window();
-                #[cfg(target_os = "macos")]
-                unsafe {
-                    use objc::class;
-                    use objc::msg_send;
-                    use objc::runtime::Object;
-                    use objc::sel;
-                    use objc::sel_impl;
-                    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-                    let ns_app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
-                    let _: () = msg_send![ns_app, activateIgnoringOtherApps: true];
-                    if let Ok(handle) = ws.window.window_handle() {
-                        if let RawWindowHandle::AppKit(appkit) = handle.as_raw() {
-                            let ns_view: *mut Object = appkit.ns_view.as_ptr() as *mut Object;
-                            let ns_window: *mut Object = msg_send![ns_view, window];
-                            if !ns_window.is_null() {
-                                let _: () = msg_send![ns_window, makeKeyAndOrderFront: std::ptr::null_mut::<Object>()];
+        }
+
+        if self.focus_attempts < 60 {
+            if let Some(key_id) = self.key_window_id {
+                if let Some(ws) = self.windows.get(&key_id) {
+                    ws.window.focus_window();
+                    #[cfg(target_os = "macos")]
+                    unsafe {
+                        use objc::class;
+                        use objc::msg_send;
+                        use objc::runtime::Object;
+                        use objc::sel;
+                        use objc::sel_impl;
+                        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                        let ns_app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+                        let _: () = msg_send![ns_app, activateIgnoringOtherApps: true];
+                        if let Ok(handle) = ws.window.window_handle() {
+                            if let RawWindowHandle::AppKit(appkit) = handle.as_raw() {
+                                let ns_view: *mut Object = appkit.ns_view.as_ptr() as *mut Object;
+                                let ns_window: *mut Object = msg_send![ns_view, window];
+                                if !ns_window.is_null() {
+                                    let _: () = msg_send![ns_window, makeKeyAndOrderFront: std::ptr::null_mut::<Object>()];
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-        if self.focus_attempts < 60 {
             self.focus_attempts += 1;
         }
 
