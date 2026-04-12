@@ -37,7 +37,7 @@ impl GlContext {
                             accum
                         }
                     })
-                    .unwrap()
+                    .expect("No GL config found")
             })
             .map_err(|e| format!("DisplayBuilder failed: {e}"))?
             .1;
@@ -62,9 +62,19 @@ impl GlContext {
                 .map_err(|e| format!("make_current failed: {e}"))?
         };
 
+        let mut gl_load_err: Option<String> = None;
         let gl = Arc::new(glow::Context::from_loader_function(|s| {
-            gl_display.get_proc_address(&std::ffi::CString::new(s).unwrap())
+            match std::ffi::CString::new(s) {
+                Ok(c_str) => gl_display.get_proc_address(&c_str),
+                Err(e) => {
+                    gl_load_err = Some(format!("Invalid GL function string: {e}"));
+                    std::ptr::null()
+                }
+            }
         }));
+        if let Some(err) = gl_load_err {
+            return Err(err);
+        }
 
         Ok(Self {
             gl_context,
@@ -76,8 +86,10 @@ impl GlContext {
     pub fn resize(&self, width: u32, height: u32) {
         self.gl_surface.resize(
             &self.gl_context,
-            NonZeroU32::new(width.max(1)).unwrap(),
-            NonZeroU32::new(height.max(1)).unwrap(),
+            // SAFETY: width.max(1) is always >= 1, so the value is non-zero.
+            unsafe { NonZeroU32::new_unchecked(width.max(1)) },
+            // SAFETY: height.max(1) is always >= 1, so the value is non-zero.
+            unsafe { NonZeroU32::new_unchecked(height.max(1)) },
         );
     }
 

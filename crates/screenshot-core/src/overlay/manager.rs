@@ -6,7 +6,8 @@ use crate::overlay::gl::GlContext;
 use crate::platform::traits::PlatformOverlay;
 use egui_winit::State as EguiState;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -22,11 +23,12 @@ impl OverlayManager {
         Self { engine, frames }
     }
 
-    pub fn run(self) {
-        let event_loop = EventLoop::new().expect("Failed to create event loop");
+    pub fn run(self) -> Result<(), String> {
+        let event_loop = EventLoop::new().map_err(|e| format!("Failed to create event loop: {e}"))?;
         event_loop.set_control_flow(ControlFlow::Wait);
         let mut app = MultiWindowApp::new(self.engine, self.frames);
         let _ = event_loop.run_app(&mut app);
+        Ok(())
     }
 }
 
@@ -100,7 +102,7 @@ impl MultiWindowApp {
 
     fn update_interactivity(&mut self) {
         let selection_opt = {
-            let engine = self.engine.lock().unwrap();
+            let engine = self.engine.lock();
             match engine.state {
                 crate::core::engine::EngineState::Editing => engine.editor.selection,
                 _ => None,
@@ -125,7 +127,7 @@ impl ApplicationHandler for MultiWindowApp {
         // Distinct egui::Context per window to avoid GL context
         // cross-contamination when each display has its own painter.
         // Engine already has frames after start().
-        let frames = self.engine.lock().unwrap().frames.clone();
+        let frames = self.engine.lock().frames.clone();
         if frames.is_empty() {
             return;
         }
@@ -168,7 +170,7 @@ impl ApplicationHandler for MultiWindowApp {
             );
 
             // Each window gets ALL frames so cross-screen content renders correctly
-            let engine_frames = self.engine.lock().unwrap().frames.clone();
+            let engine_frames = self.engine.lock().frames.clone();
             let mut screenshot_app = ScreenshotApp::new(Arc::clone(&self.engine), engine_frames);
             screenshot_app.load_screenshot_textures(&egui_ctx);
 
@@ -232,7 +234,7 @@ impl ApplicationHandler for MultiWindowApp {
         }
 
         let show_toolbar = {
-            let engine = self.engine.lock().unwrap();
+            let engine = self.engine.lock();
             if let (crate::core::engine::EngineState::Editing, Some(sel)) =
                 (&engine.state, engine.editor.selection)
             {
@@ -260,34 +262,34 @@ impl ApplicationHandler for MultiWindowApp {
                 if event.logical_key
                     == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)
                 {
-                    self.engine.lock().unwrap().cancel();
+                    self.engine.lock().cancel();
                     event_loop.exit();
                 }
                 if event.logical_key
                     == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Enter)
                 {
-                    self.engine.lock().unwrap().save();
+                    self.engine.lock().save();
                 }
 
                 // Undo / Redo
                 if is_cmd && !is_shift {
                     if let winit::keyboard::Key::Character(c) = &event.logical_key {
                         if c.eq_ignore_ascii_case("z") {
-                            self.engine.lock().unwrap().editor.undo();
+                            self.engine.lock().editor.undo();
                         }
                     }
                 }
                 if is_cmd && is_shift {
                     if let winit::keyboard::Key::Character(c) = &event.logical_key {
                         if c.eq_ignore_ascii_case("z") {
-                            self.engine.lock().unwrap().editor.redo();
+                            self.engine.lock().editor.redo();
                         }
                     }
                 }
 
                 // Copy to clipboard and tool switching (only in Editing state)
                 {
-                    let mut engine = self.engine.lock().unwrap();
+                    let mut engine = self.engine.lock();
                     if matches!(engine.state, crate::core::engine::EngineState::Editing) {
                         match &event.logical_key {
                             winit::keyboard::Key::Character(c) => {
@@ -354,7 +356,7 @@ impl ApplicationHandler for MultiWindowApp {
 
         self.update_interactivity();
 
-        if self.engine.lock().unwrap().should_close {
+        if self.engine.lock().should_close {
             event_loop.exit();
         }
     }
@@ -366,7 +368,7 @@ impl ApplicationHandler for MultiWindowApp {
 
         self.update_interactivity();
 
-        if self.engine.lock().unwrap().should_close {
+        if self.engine.lock().should_close {
             event_loop.exit();
             return;
         }
@@ -382,7 +384,7 @@ impl ApplicationHandler for MultiWindowApp {
                         if parts.len() == 4 {
                             let start_pt = LogicalPoint::new(parts[0], parts[1]);
                             let end_pt = LogicalPoint::new(parts[2], parts[3]);
-                            let mut engine = self.engine.lock().unwrap();
+                            let mut engine = self.engine.lock();
                             engine.on_mouse_down(start_pt);
                             engine.on_mouse_drag(end_pt);
                             engine.on_mouse_up(end_pt);
@@ -397,7 +399,7 @@ impl ApplicationHandler for MultiWindowApp {
             if let Ok(timeout_str) = std::env::var("SCREENSHOT_TEST_TIMEOUT_MS") {
                 if let Ok(timeout_ms) = timeout_str.parse::<u64>() {
                     if start.elapsed().as_millis() as u64 > timeout_ms {
-                        self.engine.lock().unwrap().cancel();
+                        self.engine.lock().cancel();
                         event_loop.exit();
                     }
                 }

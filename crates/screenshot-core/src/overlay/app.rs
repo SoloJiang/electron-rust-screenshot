@@ -3,7 +3,8 @@ use crate::core::engine::Engine;
 use crate::core::types::{Color, Corner, Edge, LogicalPoint, Rect, ResizeHit};
 use crate::overlay::toolbar::draw_toolbar;
 use egui::{Color32, Rect as EguiRect, Rounding, Stroke};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 pub struct ScreenshotApp {
     pub engine: Arc<Mutex<Engine>>,
@@ -71,7 +72,7 @@ impl ScreenshotApp {
         egui_paint_ms: f64,
         show_toolbar: bool,
     ) {
-        let mut engine = self.engine.lock().unwrap();
+        let mut engine = self.engine.lock();
 
         let panel = egui::CentralPanel::default().frame(egui::Frame::none());
         panel.show(ctx, |ui| {
@@ -111,7 +112,7 @@ impl ScreenshotApp {
                     ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
 
                     if let Some(win) = &engine.hovered_window {
-                        const STROKE: f64 = 1.0;
+                        const STROKE: f64 = 2.0;
                         self.draw_unmasked_region(ui.painter(), inset_rect(win.bounds, STROKE), offset);
                         let clip = egui_rect_from_logical(win.bounds, offset);
                         let stroke_rect = egui_rect_from_logical(inset_rect(win.bounds, STROKE * 0.5), offset);
@@ -132,7 +133,7 @@ impl ScreenshotApp {
                         (current.x - start.x).abs(),
                         (current.y - start.y).abs(),
                     );
-                    const STROKE: f64 = 1.0;
+                    const STROKE: f64 = 2.0;
                     self.draw_unmasked_region(ui.painter(), inset_rect(sel, STROKE), offset);
                     let clip = egui_rect_from_logical(sel, offset);
                     let stroke_rect = egui_rect_from_logical(inset_rect(sel, STROKE * 0.5), offset);
@@ -264,7 +265,7 @@ impl ScreenshotApp {
                             ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
 
                             // Unmask the selected region (inset by border width for border-box look)
-                            const STROKE: f64 = 1.0;
+                            const STROKE: f64 = 2.0;
                             self.draw_unmasked_region(ui.painter(), inset_rect(sel, STROKE), offset);
                             // Blue selection border (same as hover/window-select color)
                             let clip = egui_rect_from_logical(sel, offset);
@@ -279,7 +280,7 @@ impl ScreenshotApp {
 
                             // Draw 8 resize handles
                             let handle_radius = 4.0;
-                            let handle_stroke = Stroke::new(1.0, Color32::from_rgb(0, 120, 255));
+                            let handle_stroke = Stroke::new(2.0, Color32::from_rgb(0, 120, 255));
                             let handle_positions = [
                                 (sel.x, sel.y),                         // NW
                                 (sel.x + sel.w / 2.0, sel.y),           // N

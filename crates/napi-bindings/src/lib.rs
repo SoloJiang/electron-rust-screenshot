@@ -13,7 +13,8 @@ use screenshot_core::{
     core::window::WindowDetector,
     overlay::manager::OverlayManager,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 #[napi]
 pub fn start(config: Option<ScreenshotConfig>) -> Result<String> {
@@ -35,7 +36,7 @@ pub fn start(config: Option<ScreenshotConfig>) -> Result<String> {
 
     let capture = create_capture().map_err(|e| Error::from_reason(e.to_string()))?;
     {
-        let mut eng = engine.lock().unwrap();
+        let mut eng = engine.lock();
         eng.start(capture.as_ref());
         if matches!(eng.state, screenshot_core::core::engine::EngineState::Idle) {
             // Capture failed, drain events and return error
@@ -51,13 +52,15 @@ pub fn start(config: Option<ScreenshotConfig>) -> Result<String> {
         let windows = Backend::enumerate_windows();
         eng.detector = Some(WindowDetector::new(windows));
     }
-    let frames = engine.lock().unwrap().frames.clone();
-    OverlayManager::new(Arc::clone(&engine), frames).run();
+    let frames = engine.lock().frames.clone();
+    OverlayManager::new(Arc::clone(&engine), frames)
+        .run()
+        .map_err(|e| Error::from_reason(e))?;
 
     // Overlay closed, collect final event
     let mut events = Vec::new();
     {
-        let eng = engine.lock().unwrap();
+        let eng = engine.lock();
         while let Some(evt) = eng.event_bus.try_recv() {
             events.push(evt);
         }

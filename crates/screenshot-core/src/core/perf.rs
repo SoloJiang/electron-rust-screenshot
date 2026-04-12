@@ -40,7 +40,7 @@ impl PerformanceMonitor {
             return 0.0;
         }
         let mut sorted: Vec<f64> = self.hit_test_times.iter().copied().collect();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let idx = ((sorted.len() - 1) as f64 * 0.99) as usize;
         sorted[idx]
     }
@@ -50,7 +50,9 @@ impl PerformanceMonitor {
         let s = System::new_with_specifics(
             RefreshKind::new().with_processes(ProcessRefreshKind::new()),
         );
-        let pid = sysinfo::get_current_pid().expect("valid pid");
+        let Ok(pid) = sysinfo::get_current_pid() else {
+            return 0.0;
+        };
         s.process(pid)
             .map(|p| p.memory() as f64 / 1024.0 / 1024.0)
             .unwrap_or(0.0)

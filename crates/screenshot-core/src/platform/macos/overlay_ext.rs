@@ -21,6 +21,8 @@ pub fn setup_window(window: &Window) {
                 if !ns_window.is_null() {
                     let level: i64 = 25; // NSStatusWindowLevel
                     let _: () = msg_send![ns_window, setLevel: level];
+                    let behavior: i64 = 2; // NSWindowAnimationBehaviorNone
+                    let _: () = msg_send![ns_window, setAnimationBehavior: behavior];
                     let _: () = msg_send![ns_window, makeKeyAndOrderFront: std::ptr::null_mut::<Object>()];
                 }
             }
