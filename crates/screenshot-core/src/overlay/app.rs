@@ -101,6 +101,9 @@ impl ScreenshotApp {
                     );
                 }
             }
+            if pointer.button_double_clicked(egui::PointerButton::Primary) {
+                engine.select_hovered_window();
+            }
 
             match &mut engine.state {
                 crate::core::engine::EngineState::OverlayRunning => {
