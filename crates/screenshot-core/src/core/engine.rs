@@ -394,6 +394,32 @@ impl Engine {
     pub fn set_active_tool(&mut self, tool: crate::core::editor::Tool) {
         self.editor.active_tool = tool;
     }
+
+    pub fn state_label(&self) -> &'static str {
+        match self.state {
+            EngineState::Idle => "Idle",
+            EngineState::Capturing => "Capturing",
+            EngineState::OverlayRunning => "OverlayRunning",
+            EngineState::FreeSelecting { .. } => "FreeSelecting",
+            EngineState::Editing => "Editing",
+            EngineState::Saving => "Saving",
+        }
+    }
+
+    pub fn append_text_layer(&mut self, text: &str) {
+        let layer = crate::core::editor::Layer::Text {
+            id: uuid::Uuid::new_v4().to_string(),
+            pos: self
+                .editor
+                .selection
+                .map(|s| LogicalPoint::new(s.x + 8.0, s.y + 8.0))
+                .unwrap_or(LogicalPoint::new(0.0, 0.0)),
+            text: text.to_string(),
+            font_size: 18.0,
+            color: self.editor.tool_color,
+        };
+        self.editor.add_layer(layer);
+    }
 }
 
 fn build_preview(

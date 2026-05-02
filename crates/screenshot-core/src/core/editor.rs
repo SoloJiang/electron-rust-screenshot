@@ -12,6 +12,21 @@ pub enum Tool {
     Text,
 }
 
+impl Tool {
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "Select" => Some(Tool::Select),
+            "Rect" => Some(Tool::Rect),
+            "Ellipse" => Some(Tool::Ellipse),
+            "Arrow" => Some(Tool::Arrow),
+            "Brush" => Some(Tool::Brush),
+            "Mosaic" => Some(Tool::Mosaic),
+            "Text" => Some(Tool::Text),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Layer {
