@@ -1,7 +1,8 @@
 use crate::core::engine::Engine;
+use crate::harness::injector_real::{run_real, CliclickBin};
 use crate::harness::injector_scripted::{run_scripted, InjectorResult};
 use crate::harness::server::ServerSink;
-use harness_protocol::{Command, ServerMessage};
+use harness_protocol::{Command, ServerMessage, Tier};
 use std::time::{Duration, Instant};
 
 /// Runs once per frame from the overlay's about_to_wait hook.
@@ -41,7 +42,13 @@ pub fn tick<S: ServerSink>(engine: &mut Engine, server: &mut S, state: &mut Disp
     let mut state_changed = false;
     while let Some(cmd) = server.pop_command() {
         let cmd_seq = cmd.seq();
-        let result = run_scripted(engine, &cmd);
+        let result = match cmd.mode() {
+            Tier::Scripted => run_scripted(engine, &cmd),
+            Tier::Real => match CliclickBin::discover() {
+                Some(c) => run_real(engine, &cmd, &c),
+                None => InjectorResult::Failed("Unsupported:cliclick_not_installed".into()),
+            },
+        };
         let (ok, error) = match result {
             InjectorResult::Ok => (true, None),
             InjectorResult::Failed(s) => (false, Some(s)),
