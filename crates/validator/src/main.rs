@@ -4,6 +4,7 @@ mod child;
 mod cli;
 mod client;
 mod matcher;
+mod runner;
 mod spec;
 mod timeline;
 
@@ -13,9 +14,38 @@ use clap::Parser;
 fn main() -> Result<()> {
     env_logger::init();
     let args = cli::Cli::parse();
-    log::info!("validator: {} spec(s)", args.specs.len());
+    std::fs::create_dir_all(&args.out)?;
+    let mut all_passed = true;
     for spec_path in &args.specs {
-        log::info!("would run spec: {}", spec_path.display());
+        let spec = spec::load(spec_path)?;
+        log::info!("running spec: {} ({})", spec.meta.name, spec_path.display());
+        match runner::run(&spec) {
+            Ok(outcome) => {
+                if !outcome.passed {
+                    all_passed = false;
+                    log::error!(
+                        "FAIL {} ({} failures)",
+                        outcome.spec_name,
+                        outcome.failures.len()
+                    );
+                    for f in &outcome.failures {
+                        log::error!("  - {f}");
+                    }
+                    if args.fail_fast {
+                        break;
+                    }
+                } else {
+                    log::info!("PASS {}", outcome.spec_name);
+                }
+            }
+            Err(e) => {
+                log::error!("spec {} crashed: {e}", spec.meta.name);
+                all_passed = false;
+                if args.fail_fast {
+                    break;
+                }
+            }
+        }
     }
-    Ok(())
+    std::process::exit(if all_passed { 0 } else { 1 });
 }
