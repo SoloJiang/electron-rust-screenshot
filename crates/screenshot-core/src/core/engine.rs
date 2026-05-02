@@ -87,6 +87,8 @@ impl Engine {
                         name: format!("Screen {}", f.screen_id),
                         logical_bounds: f.logical_bounds,
                         dpi_scale: f.dpi_scale,
+                        physical_origin: (0, 0),
+                        is_primary: false,
                     })
                     .collect();
                 self.frames = frames;
@@ -630,12 +632,16 @@ mod tests {
                 name: "Left".into(),
                 logical_bounds: Rect::new(0.0, 0.0, 1000.0, 500.0),
                 dpi_scale: 2.0,
+                physical_origin: (0, 0),
+                is_primary: true,
             },
             ScreenInfo {
                 id: "right".into(),
                 name: "Right".into(),
                 logical_bounds: Rect::new(1000.0, 0.0, 1000.0, 500.0),
                 dpi_scale: 2.0,
+                physical_origin: (2000, 0),
+                is_primary: false,
             },
         ];
         assert_eq!(
@@ -667,6 +673,8 @@ mod tests {
             name: "Left".into(),
             logical_bounds: Rect::new(0.0, 0.0, 1000.0, 500.0),
             dpi_scale: 1.0,
+            physical_origin: (0, 0),
+            is_primary: true,
         }];
         engine.state = EngineState::OverlayRunning;
         // trigger free-select
@@ -692,6 +700,8 @@ mod tests {
             name: "Main".into(),
             logical_bounds: Rect::new(0.0, 0.0, 1920.0, 1080.0),
             dpi_scale: 1.0,
+            physical_origin: (0, 0),
+            is_primary: true,
         }];
         let window = DetectedWindow {
             id: "w1".into(),

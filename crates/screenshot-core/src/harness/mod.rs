@@ -1,3 +1,4 @@
+pub mod coords;
 pub mod dispatch;
 pub mod injector_real;
 pub mod injector_scripted;

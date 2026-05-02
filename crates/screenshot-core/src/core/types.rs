@@ -194,6 +194,10 @@ pub struct ScreenInfo {
     pub name: String,
     pub logical_bounds: Rect,
     pub dpi_scale: f64,
+    #[serde(default)]
+    pub physical_origin: (i32, i32),
+    #[serde(default)]
+    pub is_primary: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
