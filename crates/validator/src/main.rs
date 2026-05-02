@@ -4,6 +4,8 @@ mod child;
 mod cli;
 mod client;
 mod matcher;
+mod report;
+mod replay;
 mod runner;
 mod spec;
 mod timeline;
@@ -21,6 +23,8 @@ fn main() -> Result<()> {
         log::info!("running spec: {} ({})", spec.meta.name, spec_path.display());
         match runner::run(&spec) {
             Ok(outcome) => {
+                report::write(&args.out, &outcome)?;
+                replay::write(&args.out, &spec, &outcome)?;
                 if !outcome.passed {
                     all_passed = false;
                     log::error!(
