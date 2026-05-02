@@ -1,0 +1,35 @@
+[meta]
+name = "smoke_cancel"
+tier = "scripted"
+timeout_ms = 8000
+description = "Launch overlay, send Escape, expect cancelled event"
+
+[setup]
+save_path = "/tmp/validator-smoke-cancel.png"
+format = "png"
+
+[[steps]]
+kind = "wait_for"
+event = "started"
+timeout_ms = 3000
+
+[[steps]]
+kind = "key_press"
+key = "Escape"
+
+[[steps]]
+kind = "wait_for"
+event = "cancelled"
+timeout_ms = 2000
+
+[[asserts]]
+kind = "event_emitted"
+event = "started"
+
+[[asserts]]
+kind = "event_emitted"
+event = "cancelled"
+
+[[asserts]]
+kind = "no_event"
+event = "saved"
