@@ -5,6 +5,7 @@ use crate::overlay::app::ScreenshotApp;
 use crate::overlay::gl::GlContext;
 use crate::platform::traits::PlatformOverlay;
 use egui_winit::State as EguiState;
+use glow::HasContext;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -179,6 +180,8 @@ impl ApplicationHandler for MultiWindowApp {
                     continue;
                 }
             };
+            let max_texture_side =
+                unsafe { gl.gl.get_parameter_i32(glow::MAX_TEXTURE_SIZE) as usize };
             let egui_ctx = egui::Context::default();
             let egui_state = EguiState::new(
                 egui_ctx.clone(),
@@ -186,7 +189,7 @@ impl ApplicationHandler for MultiWindowApp {
                 &window,
                 Some(window.scale_factor() as f32),
                 None,
-                None::<usize>,
+                Some(max_texture_side),
             );
 
             // Each window gets ALL frames so cross-screen content renders correctly
@@ -314,17 +317,14 @@ impl ApplicationHandler for MultiWindowApp {
                 {
                     let mut engine = self.engine.lock();
                     if matches!(engine.state, crate::core::engine::EngineState::Editing) {
-                        match &event.logical_key {
-                            winit::keyboard::Key::Character(c) => {
-                                let key = c.as_str();
-                                match key {
-                                    "c" | "C" => {
-                                        engine.copy_to_clipboard();
-                                    }
-                                    _ => {}
+                        if let winit::keyboard::Key::Character(c) = &event.logical_key {
+                            let key = c.as_str();
+                            match key {
+                                "c" | "C" => {
+                                    engine.copy_to_clipboard();
                                 }
+                                _ => {}
                             }
-                            _ => {}
                         }
                     }
                 }
@@ -341,7 +341,6 @@ impl ApplicationHandler for MultiWindowApp {
                 let size = ws.window.inner_size();
                 ws.gl_context.resize(size.width, size.height);
                 unsafe {
-                    use glow::HasContext;
                     ws.gl_context
                         .gl
                         .viewport(0, 0, size.width as i32, size.height as i32);

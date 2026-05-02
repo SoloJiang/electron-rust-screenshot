@@ -1,3 +1,4 @@
+use crate::asserts;
 use crate::child::EngineChild;
 use crate::client::Client;
 use crate::matcher;
@@ -116,10 +117,7 @@ fn setup_to_json(spec: &Spec) -> String {
         obj.insert("format".into(), serde_json::Value::String(f.clone()));
     }
     if let Some(q) = spec.setup.quality {
-        obj.insert(
-            "quality".into(),
-            serde_json::Value::Number(q.into()),
-        );
+        obj.insert("quality".into(), serde_json::Value::Number(q.into()));
     }
     if let Some(c) = &spec.setup.default_color {
         obj.insert("defaultColor".into(), serde_json::Value::String(c.clone()));
@@ -139,7 +137,13 @@ enum StepAction {
 fn translate_step(step: &Step, seq: &mut u64) -> Option<StepAction> {
     let s = *seq;
     *seq += 1;
-    let mode = |m: &str| if m == "real" { Tier::Real } else { Tier::Scripted };
+    let mode = |m: &str| {
+        if m == "real" {
+            Tier::Real
+        } else {
+            Tier::Scripted
+        }
+    };
     match step {
         Step::MouseDown {
             x,
@@ -187,10 +191,7 @@ fn translate_step(step: &Step, seq: &mut u64) -> Option<StepAction> {
                 x: from[0],
                 y: from[1],
             },
-            to: harness_protocol::DragPoint {
-                x: to[0],
-                y: to[1],
-            },
+            to: harness_protocol::DragPoint { x: to[0], y: to[1] },
             button: parse_button(button),
             modifiers: modifiers.clone(),
             mode: mode(m),
@@ -224,11 +225,13 @@ fn translate_step(step: &Step, seq: &mut u64) -> Option<StepAction> {
             mode: mode(m),
         })),
         Step::SnapshotRequest => Some(StepAction::Send(Command::SnapshotRequest { seq: s })),
-        Step::Composite { save_path, format } => Some(StepAction::Send(Command::CompositeRequest {
-            seq: s,
-            save_path: save_path.clone(),
-            format: format.clone(),
-        })),
+        Step::Composite { save_path, format } => {
+            Some(StepAction::Send(Command::CompositeRequest {
+                seq: s,
+                save_path: save_path.clone(),
+                format: format.clone(),
+            }))
+        }
         Step::Sleep { ms } => Some(StepAction::Sleep(*ms)),
         Step::WaitFor { event, timeout_ms } => Some(StepAction::WaitFor {
             event: event.clone(),
@@ -262,9 +265,7 @@ fn evaluate_assert(a: &Assert, tl: &Timeline) -> Result<(), String> {
                 return Err(format!("event_emitted: no '{event}' event observed"));
             }
             if let Some(expected) = matches {
-                let any_matched = actual_json
-                    .iter()
-                    .any(|j| matcher::partial_eq(expected, j));
+                let any_matched = actual_json.iter().any(|j| matcher::partial_eq(expected, j));
                 if !any_matched {
                     return Err(format!(
                         "event_emitted: '{event}' observed but no payload matched the expectation"
@@ -287,7 +288,22 @@ fn evaluate_assert(a: &Assert, tl: &Timeline) -> Result<(), String> {
                 Err(format!("artifact_exists: '{path}' missing"))
             }
         }
-        // Dimensions, Hash, PixelDiff, Performance — implemented in M4.
-        _ => Ok(()),
+        Assert::ArtifactDimensions {
+            path,
+            width,
+            height,
+        } => asserts::dimensions::check(path, *width, *height),
+        Assert::ArtifactHash { path, sha256 } => asserts::hash::check(path, sha256),
+        Assert::ArtifactPixelDiff {
+            path,
+            against,
+            max_diff_ratio,
+        } => asserts::pixel_diff::check(path, against, *max_diff_ratio),
+        Assert::Performance { metric, max_ms } => asserts::performance::check(tl, metric, *max_ms),
+        Assert::StateAt { step, expect: _ } => {
+            // StateAt not yet implemented — treat as pass for now.
+            log::warn!("state_at assertion on step '{step}' not yet implemented");
+            Ok(())
+        }
     }
 }

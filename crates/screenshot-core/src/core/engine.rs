@@ -269,7 +269,7 @@ impl Engine {
     }
 
     pub fn on_selection_transform_drag(&mut self, pos: LogicalPoint) {
-        if let (EngineState::Editing, Some(ref state)) =
+        if let (EngineState::Editing, Some(state)) =
             (&self.state, self.selection_transform.as_ref())
         {
             let delta =

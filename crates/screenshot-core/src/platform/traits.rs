@@ -37,8 +37,6 @@ pub fn create_capture() -> Result<Box<dyn PlatformCapture>, CaptureError> {
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        Err(CaptureError::PlatformError(
-            "Unsupported platform".into(),
-        ))
+        Err(CaptureError::PlatformError("Unsupported platform".into()))
     }
 }

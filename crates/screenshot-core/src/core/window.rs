@@ -32,8 +32,13 @@ impl WindowDetector {
         // top-most (highest z_order) match. Geometric filtering is fragile
         // because front windows may be excluded from the list (e.g. system
         // windows, tiny windows), causing back windows to incorrectly survive.
-        let items: Vec<WindowItem> = windows.into_iter().map(|w| WindowItem { window: w }).collect();
-        Self { tree: RTree::bulk_load(items) }
+        let items: Vec<WindowItem> = windows
+            .into_iter()
+            .map(|w| WindowItem { window: w })
+            .collect();
+        Self {
+            tree: RTree::bulk_load(items),
+        }
     }
 
     pub fn hit_test(&self, point: LogicalPoint) -> Option<&DetectedWindow> {
@@ -139,16 +144,22 @@ mod tests {
         let detector = WindowDetector::new(vec![w1, w2, w3]);
         // w1 is fully covered by w2 + w3, so it should be filtered out
         assert_eq!(
-            detector.hit_test(LogicalPoint::new(25.0, 50.0)).map(|w| w.id.as_str()),
+            detector
+                .hit_test(LogicalPoint::new(25.0, 50.0))
+                .map(|w| w.id.as_str()),
             Some("w2")
         );
         assert_eq!(
-            detector.hit_test(LogicalPoint::new(75.0, 50.0)).map(|w| w.id.as_str()),
+            detector
+                .hit_test(LogicalPoint::new(75.0, 50.0))
+                .map(|w| w.id.as_str()),
             Some("w3")
         );
         // w1 should not be detectable anywhere
         assert_ne!(
-            detector.hit_test(LogicalPoint::new(50.0, 50.0)).map(|w| w.id.as_str()),
+            detector
+                .hit_test(LogicalPoint::new(50.0, 50.0))
+                .map(|w| w.id.as_str()),
             Some("w1")
         );
     }

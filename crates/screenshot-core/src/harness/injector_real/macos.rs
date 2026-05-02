@@ -143,9 +143,7 @@ pub fn run_real<C: Cliclick>(
                 Err(e) => InjectorResult::Failed(format!("InjectorFailure:{e}")),
             }
         }
-        _ => InjectorResult::Failed(
-            "Unsupported:real_tier_does_not_handle_this_command".into(),
-        ),
+        _ => InjectorResult::Failed("Unsupported:real_tier_does_not_handle_this_command".into()),
     }
 }
 

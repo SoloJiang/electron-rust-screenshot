@@ -1,0 +1,64 @@
+[meta]
+name = "e2e_move"
+tier = "scripted"
+timeout_ms = 12000
+description = "Select a region, then drag the body to move it"
+
+[setup]
+save_path = "/tmp/validator-e2e-move.png"
+format = "png"
+
+[[steps]]
+kind = "wait_for"
+event = "started"
+timeout_ms = 3000
+
+# Free-select a region in the center
+[[steps]]
+kind = "drag"
+from = [500.0, 500.0]
+to = [700.0, 600.0]
+mode = "scripted"
+
+[[steps]]
+kind = "wait_for"
+event = "regionSelected"
+timeout_ms = 2000
+
+# Drag the selection body by 100px right
+[[steps]]
+kind = "drag"
+from = [600.0, 550.0]
+to = [700.0, 550.0]
+mode = "scripted"
+
+[[steps]]
+kind = "sleep"
+ms = 500
+
+[[steps]]
+kind = "save"
+mode = "scripted"
+
+[[steps]]
+kind = "wait_for"
+event = "saved"
+timeout_ms = 3000
+
+[[asserts]]
+kind = "event_emitted"
+event = "regionSelected"
+
+[[asserts]]
+kind = "event_emitted"
+event = "saved"
+
+[[asserts]]
+kind = "artifact_exists"
+path = "/tmp/validator-e2e-move.png"
+
+[[asserts]]
+kind = "artifact_dimensions"
+path = "/tmp/validator-e2e-move.png"
+width = 200
+height = 100

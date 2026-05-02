@@ -16,7 +16,9 @@
   },
   "scripts": {
     "build": "napi build --platform --release --cargo-cwd crates/napi-bindings dist --js index.js --dts index.d.ts",
-    "test": "node scripts/test-smoke.js"
+    "test": "node scripts/test-smoke.js",
+    "validator:build": "cargo build --package validator",
+    "validator": "cargo run --package validator -- validator-specs/*.toml --out validator-output"
   },
   "keywords": [],
   "author": "",

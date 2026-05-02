@@ -155,7 +155,7 @@ impl EditorState {
                     old_layers,
                     ..
                 } => {
-                    self.selection = old_selection.clone();
+                    self.selection = *old_selection;
                     self.layers = old_layers.clone();
                     self.redo_stack.push(op);
                 }
@@ -199,7 +199,7 @@ impl EditorState {
                     new_layers,
                     ..
                 } => {
-                    self.selection = new_selection.clone();
+                    self.selection = *new_selection;
                     self.layers = new_layers.clone();
                     self.undo_stack.push(op);
                 }
@@ -607,11 +607,11 @@ mod tests {
             color: Color::new(0, 255, 0, 255),
         }];
 
-        state.selection = new_selection.clone();
+        state.selection = new_selection;
         state.layers = new_layers.clone();
         state.undo_stack.push(LayerOp::UpdateSelectionAndLayers {
-            old_selection: old_selection.clone(),
-            new_selection: new_selection.clone(),
+            old_selection,
+            new_selection,
             old_layers: old_layers.clone(),
             new_layers: new_layers.clone(),
         });

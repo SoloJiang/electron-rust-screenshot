@@ -1,13 +1,14 @@
 #![allow(dead_code)]
 
+mod asserts;
 mod child;
 mod cli;
 mod client;
 mod matcher;
-mod report;
 mod replay;
+mod report;
 mod runner;
-mod spec;
+pub mod spec;
 mod timeline;
 
 use anyhow::Result;

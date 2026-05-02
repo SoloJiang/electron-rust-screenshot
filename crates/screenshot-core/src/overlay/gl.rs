@@ -63,15 +63,15 @@ impl GlContext {
         };
 
         let mut gl_load_err: Option<String> = None;
-        let gl = Arc::new(glow::Context::from_loader_function(|s| {
-            match std::ffi::CString::new(s) {
+        let gl = Arc::new(glow::Context::from_loader_function(
+            |s| match std::ffi::CString::new(s) {
                 Ok(c_str) => gl_display.get_proc_address(&c_str),
                 Err(e) => {
                     gl_load_err = Some(format!("Invalid GL function string: {e}"));
                     std::ptr::null()
                 }
-            }
-        }));
+            },
+        ));
         if let Some(err) = gl_load_err {
             return Err(err);
         }
