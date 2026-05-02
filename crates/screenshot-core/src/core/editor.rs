@@ -1,6 +1,7 @@
 use super::types::{Color, LogicalPoint, Rect};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tool {
     Select,
     Rect,
@@ -11,7 +12,8 @@ pub enum Tool {
     Text,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Layer {
     ShapeRect {
         id: String,
@@ -54,9 +56,17 @@ pub enum Layer {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LayerOp {
-    AddLayer { layer: Layer },
-    DeleteLayer { layer: Layer },
-    UpdateLayer { id: String, old: Layer, new: Layer },
+    AddLayer {
+        layer: Layer,
+    },
+    DeleteLayer {
+        layer: Layer,
+    },
+    UpdateLayer {
+        id: String,
+        old: Layer,
+        new: Layer,
+    },
     UpdateSelectionAndLayers {
         old_selection: Option<Rect>,
         new_selection: Option<Rect>,
@@ -125,7 +135,11 @@ impl EditorState {
                         self.redo_stack.push(op);
                     }
                 }
-                LayerOp::UpdateSelectionAndLayers { old_selection, old_layers, .. } => {
+                LayerOp::UpdateSelectionAndLayers {
+                    old_selection,
+                    old_layers,
+                    ..
+                } => {
                     self.selection = old_selection.clone();
                     self.layers = old_layers.clone();
                     self.redo_stack.push(op);
@@ -165,7 +179,11 @@ impl EditorState {
                         });
                     }
                 }
-                LayerOp::UpdateSelectionAndLayers { new_selection, new_layers, .. } => {
+                LayerOp::UpdateSelectionAndLayers {
+                    new_selection,
+                    new_layers,
+                    ..
+                } => {
                     self.selection = new_selection.clone();
                     self.layers = new_layers.clone();
                     self.undo_stack.push(op);
@@ -301,13 +319,7 @@ impl EditorState {
     }
 }
 
-fn transform_layer(
-    layer: &Layer,
-    original: Rect,
-    new_rect: Rect,
-    sx: f64,
-    sy: f64,
-) -> Layer {
+fn transform_layer(layer: &Layer, original: Rect, new_rect: Rect, sx: f64, sy: f64) -> Layer {
     let norm_x = |x: f64| -> f64 {
         if original.w == 0.0 {
             0.0
