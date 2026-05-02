@@ -9,6 +9,11 @@ export async function runScreenshot(
 ): Promise<any> {
   const tmpFile = `/tmp/screenshot-result-${Date.now()}.json`;
   const libPath = path.resolve(__dirname, '../../dist/lib');
+
+  let childExited = false;
+  let childExitCode: number | null = null;
+  let stderr = '';
+
   const child = spawn(
     'node',
     [
@@ -27,6 +32,15 @@ fs.writeFileSync('${tmpFile}', JSON.stringify(result));
     }
   );
 
+  child.stderr.on('data', (data) => {
+    stderr += data.toString();
+  });
+
+  child.on('exit', (code) => {
+    childExited = true;
+    childExitCode = code;
+  });
+
   // Wait for overlay to appear and gain focus
   await new Promise((r) => setTimeout(r, 1200));
 
@@ -43,9 +57,17 @@ fs.writeFileSync('${tmpFile}', JSON.stringify(result));
       child.kill();
       return JSON.parse(raw);
     }
+    if (childExited) {
+      child.kill();
+      throw new Error(
+        `Screenshot child exited early with code ${childExitCode}. stderr: ${stderr.slice(0, 500)}`
+      );
+    }
     await new Promise((r) => setTimeout(r, 200));
   }
 
   child.kill();
-  throw new Error('Screenshot did not complete in time');
+  throw new Error(
+    `Screenshot did not complete in time. stderr: ${stderr.slice(0, 500)}`
+  );
 }
