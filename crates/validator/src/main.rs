@@ -2,7 +2,10 @@
 
 mod child;
 mod cli;
+mod client;
+mod matcher;
 mod spec;
+mod timeline;
 
 use anyhow::Result;
 use clap::Parser;
