@@ -1,0 +1,48 @@
+[meta]
+name = "hybrid_save"
+tier = "hybrid"
+timeout_ms = 12000
+description = "Scripted drag to select region, real-tier Enter to save"
+
+[setup]
+save_path = "/tmp/validator-hybrid.png"
+format = "png"
+
+[[steps]]
+kind = "wait_for"
+event = "started"
+timeout_ms = 3000
+
+[[steps]]
+kind = "drag"
+from = [120, 140]
+to = [380, 360]
+mode = "scripted"
+
+[[steps]]
+kind = "wait_for"
+event = "regionSelected"
+timeout_ms = 2000
+
+# Real-tier Enter — exercises the actual NSEvent path.
+[[steps]]
+kind = "key_press"
+key = "Enter"
+mode = "real"
+
+[[steps]]
+kind = "wait_for"
+event = "saved"
+timeout_ms = 3000
+
+[[asserts]]
+kind = "event_emitted"
+event = "regionSelected"
+
+[[asserts]]
+kind = "event_emitted"
+event = "saved"
+
+[[asserts]]
+kind = "artifact_exists"
+path = "/tmp/validator-hybrid.png"
