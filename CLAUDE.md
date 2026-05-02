@@ -37,8 +37,6 @@ cd e2e && npx jest --runInBand specs/free-select.spec.ts
 
 # CI 必跑的 lint gate（提交前最好本地跑一次）
 cargo fmt --all -- --check
-# 注：当前 workspace 存在少量 pre-existing clippy 错误（editor.rs / overlay/app.rs / capture_cg.rs），
-#     不影响功能，修复中。可用 `cargo clippy --package <crate>` 对单个 crate 检查。
 cargo clippy --workspace --all-targets -- -D warnings
 
 # 手动触发 overlay 进行交互验证（mode: interactive | jpg | clipboard）
