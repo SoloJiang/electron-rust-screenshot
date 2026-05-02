@@ -31,6 +31,13 @@ cd e2e && npx jest --runInBand
 
 # 运行某个特定 E2E spec
 cd e2e && npx jest --runInBand specs/free-select.spec.ts
+
+# CI 必跑的 lint gate（提交前最好本地跑一次）
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+
+# 手动触发 overlay 进行交互验证（mode: interactive | jpg | clipboard）
+node scripts/demo.js interactive
 ```
 
 ## 关键架构细节
@@ -61,11 +68,14 @@ cd e2e && npx jest --runInBand specs/free-select.spec.ts
   - `events.rs` — `EngineEvent` enum 和 `EventBus`（基于 crossbeam-channel）。
   - `types.rs` — 逻辑坐标（`Rect`、`LogicalPoint`）、`Color`、`ScreenInfo`、`DetectedWindow`。
   - `dpi.rs` — 逻辑坐标与物理像素之间的转换。
+  - `window.rs` — `WindowDetector`，基于 `rstar::RTree` 做窗口 hover 命中检测。
+  - `perf.rs` — `PerformanceMonitor`，记录 hit-test 耗时并通过 `MetricsPayload` 上报。
 - **`overlay/`** — UI 层：
   - `manager.rs` — `OverlayManager` / `MultiWindowApp`（winit `ApplicationHandler`）。为每个物理 display 创建独立的窗口，各自持有独立的 `egui::Context`、`EguiState` 和 `egui_glow::Painter`，以避免 GL context 交叉污染。
   - `app.rs` — `ScreenshotApp`（egui app）。每个窗口接收一个 `global_offset`，因此所有显示器都能渲染完整的 frame 集合以支持跨屏拖拽。
   - `gl.rs` — `GlContext` 辅助模块，使用 `glutin 0.32` + `glutin-winit 0.5`。
   - `save.rs` — `composite_image` 负责从所有相交屏幕拼接 captured frame，对 DPI 不一致的部分使用 Lanczos3 重采样，并对裁剪后的输出应用 mosaic。
+  - `toolbar.rs` — `draw_toolbar`，负责 editor 模式下的工具栏 UI。
 - **`platform/`** — 平台抽象层：
   - `traits.rs` — 定义 `PlatformCapture`、`PlatformClipboard`、`PlatformOverlay`、`PlatformWindowEnumerator` trait，以及 `create_capture()` 工厂函数和 `Backend` 类型别名。
   - `macos/` — macOS 专属实现：
@@ -76,6 +86,7 @@ cd e2e && npx jest --runInBand specs/free-select.spec.ts
     - `overlay_ext.rs` — `setup_window` 和 `set_mouse_passthrough` 的 objc 实现。
     - `mod.rs` — `MacosBackend`，实现所有 platform traits。
   - `windows/` — Windows 平台 stub（`WindowsBackend` 待实现）。
+  - `unsupported.rs` — 非 macOS / Windows 平台的 `UnsupportedBackend` fallback（仅返回错误）。
 - **`bridge/`**（位于 `crates/napi-bindings/src/`）— napi bindings：
   - `config.rs` — `ScreenshotConfig` napi struct。
   - `session.rs` — `ScreenshotSession` napi class。
@@ -102,7 +113,7 @@ E2E 套件（`e2e/`）通过 AppleScript 调用 `cliclick` 模拟鼠标/键盘�
 - `e2e/helpers/mouse.ts` / `keyboard.ts` — 封装 AppleScript / `cliclick` 的鼠标与键盘操作。
 - `e2e/helpers/window.ts` — 通过 AppleScript 打开/关闭 Safari fixture 窗口。
 
-`cliclick` 注入事件需要 **Accessibility permissions**。若权限不可用，overlay 提供 `SCREENSHOT_TEST_MOCK_DRAG` fallback，在 5 秒后内部模拟拖拽 + 保存。
+`cliclick` 注入事件需要 **Accessibility permissions**。若权限不可用，可设置 `SCREENSHOT_TEST_MOCK_DRAG=x1,y1,x2,y2`（如 CI 中使用的 `300,300,500,500`），overlay 在启动后约 5 秒内部模拟该坐标的拖拽 + 保存。
 
 ### macOS Overlay 窗口行为
 
