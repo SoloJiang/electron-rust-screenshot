@@ -107,11 +107,49 @@ impl HarnessServer {
     }
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+pub trait ServerSink {
+    fn poll_inbound(&mut self) -> std::io::Result<()>;
+    fn pop_command(&mut self) -> Option<Command>;
+    fn send(&mut self, msg: ServerMessage);
+}
+
+impl ServerSink for HarnessServer {
+    fn poll_inbound(&mut self) -> std::io::Result<()> {
+        HarnessServer::poll_inbound(self)
+    }
+    fn pop_command(&mut self) -> Option<Command> {
+        HarnessServer::pop_command(self)
+    }
+    fn send(&mut self, mut msg: ServerMessage) {
+        let seq = self.next_seq();
+        match &mut msg {
+            ServerMessage::Hello { seq: s, .. } => *s = seq,
+            ServerMessage::EngineEvent { seq: s, .. } => *s = seq,
+            ServerMessage::StateSnapshot { seq: s, .. } => *s = seq,
+            ServerMessage::CommandAck(ack) => ack.seq = seq,
+        }
+        let _ = self.write_message(&msg);
+    }
+}
+
+#[cfg(test)]
+impl ServerSink for BufferedServer {
+    fn poll_inbound(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+    fn pop_command(&mut self) -> Option<Command> {
+        self.pending_commands.pop_front()
+    }
+    fn send(&mut self, msg: ServerMessage) {
+        self.outbound.push(serde_json::to_string(&msg).unwrap());
+    }
 }
 
 /// Test double — keeps lines in memory instead of a real socket.

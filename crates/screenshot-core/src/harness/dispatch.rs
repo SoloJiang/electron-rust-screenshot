@@ -1,1 +1,157 @@
-// Filled in by a later M1 task
+use crate::core::engine::Engine;
+use crate::harness::injector_scripted::{run_scripted, InjectorResult};
+use crate::harness::server::ServerSink;
+use harness_protocol::{Command, ServerMessage};
+use std::time::{Duration, Instant};
+
+/// Runs once per frame from the overlay's about_to_wait hook.
+/// `last_snapshot` tracks the last time we proactively pushed a state snapshot,
+/// so we throttle to at most one per ~50ms.
+pub struct DispatchState {
+    pub last_snapshot: Instant,
+    pub snapshot_throttle: Duration,
+}
+
+impl Default for DispatchState {
+    fn default() -> Self {
+        Self {
+            last_snapshot: Instant::now() - Duration::from_secs(1),
+            snapshot_throttle: Duration::from_millis(50),
+        }
+    }
+}
+
+pub fn tick<S: ServerSink>(engine: &mut Engine, server: &mut S, state: &mut DispatchState) {
+    // 1. Pump inbound bytes (non-blocking).
+    if let Err(e) = server.poll_inbound() {
+        eprintln!("harness poll_inbound error: {}", e);
+    }
+
+    // 2. Forward engine events emitted since the last tick.
+    while let Some(ev) = engine.event_bus.try_recv() {
+        let payload = serde_json::to_value(ev).expect("EngineEvent serializes");
+        server.send(ServerMessage::EngineEvent {
+            ts: super::server::now_ms(),
+            seq: 0,
+            payload,
+        });
+    }
+
+    // 3. Dispatch any pending commands.
+    let mut state_changed = false;
+    while let Some(cmd) = server.pop_command() {
+        let cmd_seq = cmd.seq();
+        let result = run_scripted(engine, &cmd);
+        let (ok, error) = match result {
+            InjectorResult::Ok => (true, None),
+            InjectorResult::Failed(s) => (false, Some(s)),
+        };
+        server.send(ServerMessage::CommandAck(harness_protocol::CommandAck {
+            ts: super::server::now_ms(),
+            seq: 0,
+            ref_seq: cmd_seq,
+            ok,
+            error,
+        }));
+        match cmd {
+            Command::SnapshotRequest { .. } => {
+                let snap = engine.snapshot_state();
+                server.send(ServerMessage::StateSnapshot {
+                    ts: super::server::now_ms(),
+                    seq: 0,
+                    payload: snap,
+                });
+            }
+            Command::Hello { .. } | Command::Shutdown { .. } => {}
+            _ => {
+                state_changed = true;
+            }
+        }
+    }
+
+    // 4. Throttled background state snapshot.
+    if state_changed && state.last_snapshot.elapsed() >= state.snapshot_throttle {
+        let snap = engine.snapshot_state();
+        server.send(ServerMessage::StateSnapshot {
+            ts: super::server::now_ms(),
+            seq: 0,
+            payload: snap,
+        });
+        state.last_snapshot = Instant::now();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::capture::MockCapture;
+    use crate::core::types::{Color, Rect};
+    use crate::harness::server::BufferedServer;
+
+    fn make_engine() -> Engine {
+        let mut e = Engine::new(
+            "/tmp/x.png".into(),
+            "png".into(),
+            90,
+            Color::new(255, 0, 0, 255),
+            3.0,
+            8.0,
+        );
+        let cap = MockCapture::new(Rect::new(0.0, 0.0, 1920.0, 1080.0));
+        e.start(&cap);
+        e
+    }
+
+    #[test]
+    fn dispatch_forwards_started_event_to_server() {
+        let mut engine = make_engine();
+        let mut server = BufferedServer::new_for_test();
+        let mut state = DispatchState::default();
+        tick(&mut engine, &mut server, &mut state);
+        let lines = server.take_outbound();
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("\"type\":\"engine_event\"")
+                    && l.contains("\"type\":\"started\"")),
+            "expected started event forwarded; got {:?}",
+            lines
+        );
+    }
+
+    #[test]
+    fn dispatch_acks_unknown_state_command() {
+        let mut engine = make_engine();
+        engine.state = crate::core::engine::EngineState::Editing;
+        engine.editor.selection = Some(Rect::new(0.0, 0.0, 100.0, 100.0));
+        let mut server = BufferedServer::new_for_test();
+        server.feed_inbound(r#"{"type":"tool_set","seq":17,"tool":"Rect","mode":"scripted"}"#);
+        let mut state = DispatchState::default();
+        tick(&mut engine, &mut server, &mut state);
+        let lines = server.take_outbound();
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("\"refSeq\":17") && l.contains("\"ok\":true")),
+            "ToolSet in Editing should be acked with ok=true; got {:?}",
+            lines
+        );
+    }
+
+    #[test]
+    fn snapshot_request_pushes_state_snapshot() {
+        let mut engine = make_engine();
+        let mut server = BufferedServer::new_for_test();
+        server.feed_inbound(r#"{"type":"snapshot_request","seq":99}"#);
+        let mut state = DispatchState::default();
+        tick(&mut engine, &mut server, &mut state);
+        let lines = server.take_outbound();
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("\"type\":\"state_snapshot\"")),
+            "snapshot_request should produce stateSnapshot; got {:?}",
+            lines
+        );
+    }
+}
