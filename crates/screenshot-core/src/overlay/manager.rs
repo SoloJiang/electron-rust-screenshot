@@ -46,6 +46,8 @@ struct WindowState {
     ignores_mouse_events: bool,
     last_frame_time_ms: f64,
     last_egui_paint_ms: f64,
+    /// Textures emitted by the priming run that must be applied on the first real paint.
+    pending_textures_delta: Option<egui::TexturesDelta>,
 }
 
 impl Drop for WindowState {
@@ -195,7 +197,7 @@ impl ApplicationHandler for MultiWindowApp {
             // Prime the egui context with the correct max_texture_side
             // before loading screenshot textures, which may exceed the default 2048 limit.
             let raw_input = egui_state.take_egui_input(&window);
-            let _ = egui_ctx.run(raw_input, |_| {});
+            let priming_output = egui_ctx.run(raw_input, |_| {});
 
             // Each window gets ALL frames so cross-screen content renders correctly
             let engine_frames = self.engine.lock().frames.clone();
@@ -225,6 +227,7 @@ impl ApplicationHandler for MultiWindowApp {
                 ignores_mouse_events: false,
                 last_frame_time_ms: 0.0,
                 last_egui_paint_ms: 0.0,
+                pending_textures_delta: Some(priming_output.textures_delta),
             };
             let id = ws.window.id();
             self.windows.insert(id, ws);
@@ -372,12 +375,22 @@ impl ApplicationHandler for MultiWindowApp {
                     .egui_ctx
                     .tessellate(full_output.shapes, full_output.pixels_per_point);
                 let ppp = full_output.pixels_per_point;
+
+                let textures_delta = if let Some(pending) = ws.pending_textures_delta.take() {
+                    let mut merged = pending;
+                    merged.set.extend(full_output.textures_delta.set);
+                    merged.free.extend(full_output.textures_delta.free);
+                    merged
+                } else {
+                    full_output.textures_delta
+                };
+
                 let paint_start = std::time::Instant::now();
                 ws.painter.paint_and_update_textures(
                     [size.width, size.height],
                     ppp,
                     &clipped_primitives,
-                    &full_output.textures_delta,
+                    &textures_delta,
                 );
                 ws.last_egui_paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
 
