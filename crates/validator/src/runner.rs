@@ -39,6 +39,12 @@ pub fn run(
                 Ok(Some(msg)) => timeline_for_thread.lock().unwrap().record(msg),
                 Ok(None) => break,
                 Err(e) => {
+                    if e.downcast_ref::<std::io::Error>()
+                        .is_some_and(|io| io.kind() == std::io::ErrorKind::WouldBlock)
+                    {
+                        thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
                     log::warn!("recv error: {e}");
                     break;
                 }
@@ -71,18 +77,13 @@ pub fn run(
     let started = Instant::now();
     let spec_deadline = started + Duration::from_millis(spec.meta.timeout_ms);
     let mut seq = 1u64;
-    let mut timeline_cursor;
+    let mut last_seq = 0u64;
     for step in &spec.steps {
         if Instant::now() > spec_deadline {
             return Err(anyhow!(
                 "spec timeout exceeded ({} ms)",
                 spec.meta.timeout_ms
             ));
-        }
-        {
-            let tl = timeline.lock().unwrap();
-            timeline_cursor = tl.entries.len();
-            drop(tl);
         }
         let tier_default = tier_override.unwrap_or(&spec.meta.tier);
         match translate_step(step, &mut seq, tier_default) {
@@ -92,6 +93,7 @@ pub fn run(
                 let ack_deadline = Instant::now() + Duration::from_secs(2);
                 let mut ack_ok = false;
                 let mut ack_error = None;
+                let mut ack_seq = last_seq;
                 while Instant::now() < ack_deadline {
                     let tl = timeline.lock().unwrap();
                     if let Some(ack) = tl.entries.iter().rev().find_map(|e| match &e.message {
@@ -100,6 +102,7 @@ pub fn run(
                     }) {
                         ack_ok = ack.ok;
                         ack_error = ack.error.clone();
+                        ack_seq = ack.seq;
                         break;
                     }
                     drop(tl);
@@ -111,14 +114,17 @@ pub fn run(
                         ack_error.unwrap_or_else(|| "no ack received".into())
                     ));
                 }
+                last_seq = ack_seq;
             }
             Ok(Some(StepAction::WaitFor { event, timeout_ms })) => {
                 let deadline = Instant::now() + Duration::from_millis(timeout_ms);
                 let mut found = false;
                 while Instant::now() < deadline {
                     let tl = timeline.lock().unwrap();
-                    if tl.entries[timeline_cursor..]
+                    if tl
+                        .entries
                         .iter()
+                        .filter(|e| e.message.seq() > last_seq)
                         .filter_map(|e| match &e.message {
                             ServerMessage::EngineEvent { payload, .. } => Some(payload),
                             _ => None,
@@ -138,8 +144,28 @@ pub fn run(
                         timeout_ms
                     ));
                 }
+                {
+                    let tl = timeline.lock().unwrap();
+                    last_seq = tl
+                        .entries
+                        .iter()
+                        .map(|e| e.message.seq())
+                        .max()
+                        .unwrap_or(last_seq);
+                }
             }
-            Ok(Some(StepAction::Sleep(ms))) => thread::sleep(Duration::from_millis(ms)),
+            Ok(Some(StepAction::Sleep(ms))) => {
+                thread::sleep(Duration::from_millis(ms));
+                {
+                    let tl = timeline.lock().unwrap();
+                    last_seq = tl
+                        .entries
+                        .iter()
+                        .map(|e| e.message.seq())
+                        .max()
+                        .unwrap_or(last_seq);
+                }
+            }
             Ok(None) => {}
             Err(e) => return Err(anyhow!(e)),
         }
