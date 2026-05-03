@@ -64,6 +64,7 @@ impl EngineChild {
 impl Drop for EngineChild {
     fn drop(&mut self) {
         let _ = self.process.kill();
+        let _ = self.process.wait();
         let _ = std::fs::remove_file(&self.socket_path);
     }
 }
@@ -72,17 +73,39 @@ fn accept_with_timeout(
     listener: interprocess::local_socket::Listener,
     process: &mut Child,
 ) -> Result<interprocess::local_socket::Stream> {
+    use interprocess::local_socket::ListenerNonblockingMode;
+    listener
+        .set_nonblocking(ListenerNonblockingMode::Accept)
+        .context("failed to set listener nonblocking")?;
+
     let (tx, rx) = std::sync::mpsc::channel::<Result<interprocess::local_socket::Stream>>();
-    std::thread::spawn(move || {
-        if let Ok(stream) = listener.accept() {
-            let _ = tx.send(Ok(stream));
+    let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancelled_clone = std::sync::Arc::clone(&cancelled);
+
+    std::thread::spawn(move || loop {
+        match listener.accept() {
+            Ok(stream) => {
+                let _ = tx.send(Ok(stream));
+                break;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if cancelled_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => {
+                let _ = tx.send(Err(anyhow!("accept failed: {e}")));
+                break;
+            }
         }
     });
 
     match rx.recv_timeout(CONNECT_TIMEOUT) {
         Ok(Ok(stream)) => Ok(stream),
-        Ok(Err(e)) => Err(anyhow!("accept failed: {e}")),
+        Ok(Err(e)) => Err(e),
         Err(_) => {
+            cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
             let _ = process.kill();
             Err(anyhow!(
                 "engine child did not connect within {:?}",
