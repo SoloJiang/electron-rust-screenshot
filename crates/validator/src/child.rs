@@ -24,7 +24,7 @@ impl EngineChild {
             .create_sync()
             .context("failed to create listener")?;
 
-        let engine = engine_path.unwrap_or("./dist/lib");
+        let engine = engine_path.unwrap_or("./dist/index.js");
         let script = format!(
             "const {{start}} = require('{engine}'); \
              const cfg = {setup_json}; \

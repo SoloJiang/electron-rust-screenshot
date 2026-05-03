@@ -66,12 +66,18 @@ pub fn run(
     let started = Instant::now();
     let spec_deadline = started + Duration::from_millis(spec.meta.timeout_ms);
     let mut seq = 1u64;
+    let mut timeline_cursor;
     for step in &spec.steps {
         if Instant::now() > spec_deadline {
             return Err(anyhow!(
                 "spec timeout exceeded ({} ms)",
                 spec.meta.timeout_ms
             ));
+        }
+        {
+            let tl = timeline.lock().unwrap();
+            timeline_cursor = tl.entries.len();
+            drop(tl);
         }
         let tier_default = tier_override.unwrap_or(&spec.meta.tier);
         match translate_step(step, &mut seq, tier_default) {
@@ -81,7 +87,14 @@ pub fn run(
                 let mut found = false;
                 while Instant::now() < deadline {
                     let tl = timeline.lock().unwrap();
-                    if tl.engine_events().any(|ev| event_matches_name(ev, &event)) {
+                    if tl.entries[timeline_cursor..]
+                        .iter()
+                        .filter_map(|e| match &e.message {
+                            ServerMessage::EngineEvent { payload, .. } => Some(payload),
+                            _ => None,
+                        })
+                        .any(|ev| event_matches_name(ev, &event))
+                    {
                         found = true;
                         break;
                     }
@@ -116,7 +129,7 @@ pub fn run(
         .unwrap();
     let mut failures = Vec::new();
     for a in &spec.asserts {
-        if let Err(reason) = evaluate_assert(a, &timeline_final) {
+        if let Err(reason) = evaluate_assert(a, &timeline_final, started) {
             failures.push(reason);
         }
     }
@@ -276,7 +289,7 @@ fn event_matches_name(ev: &serde_json::Value, name: &str) -> bool {
         .is_some_and(|t| t.eq_ignore_ascii_case(name))
 }
 
-fn evaluate_assert(a: &Assert, tl: &Timeline) -> Result<(), String> {
+fn evaluate_assert(a: &Assert, tl: &Timeline, started: Instant) -> Result<(), String> {
     match a {
         Assert::EventEmitted { event, matches } => {
             let actual_json: Vec<&serde_json::Value> = tl
@@ -296,8 +309,24 @@ fn evaluate_assert(a: &Assert, tl: &Timeline) -> Result<(), String> {
             }
             Ok(())
         }
-        Assert::NoEvent { event, .. } => {
-            if tl.engine_events().any(|ev| event_matches_name(ev, event)) {
+        Assert::NoEvent { event, within_ms } => {
+            let found = if let Some(ms) = within_ms {
+                let cutoff = started + Duration::from_millis(*ms);
+                tl.entries.iter().any(|e| {
+                    if e.at > cutoff {
+                        return false;
+                    }
+                    match &e.message {
+                        ServerMessage::EngineEvent { payload, .. } => {
+                            event_matches_name(payload, event)
+                        }
+                        _ => false,
+                    }
+                })
+            } else {
+                tl.engine_events().any(|ev| event_matches_name(ev, event))
+            };
+            if found {
                 Err(format!("no_event: forbidden event '{event}' was emitted"))
             } else {
                 Ok(())
