@@ -19,7 +19,11 @@ pub struct RunOutcome {
     pub duration: Duration,
 }
 
-pub fn run(spec: &Spec, engine_path: Option<&str>) -> Result<RunOutcome> {
+pub fn run(
+    spec: &Spec,
+    engine_path: Option<&str>,
+    tier_override: Option<&str>,
+) -> Result<RunOutcome> {
     let setup_json = setup_to_json(spec);
     let child = EngineChild::spawn(&setup_json, engine_path)?;
     let stream = child.stream.try_clone()?;
@@ -69,7 +73,8 @@ pub fn run(spec: &Spec, engine_path: Option<&str>) -> Result<RunOutcome> {
                 spec.meta.timeout_ms
             ));
         }
-        match translate_step(step, &mut seq, &spec.meta.tier) {
+        let tier_default = tier_override.unwrap_or(&spec.meta.tier);
+        match translate_step(step, &mut seq, tier_default) {
             Some(StepAction::Send(cmd)) => client.send(&cmd)?,
             Some(StepAction::WaitFor { event, timeout_ms }) => {
                 let deadline = Instant::now() + Duration::from_millis(timeout_ms);
@@ -154,11 +159,7 @@ fn translate_step(step: &Step, seq: &mut u64, tier_default: &str) -> Option<Step
     let s = *seq;
     *seq += 1;
     let mode = |m: &str| {
-        let effective = if m.is_empty() || m == "scripted" {
-            tier_default
-        } else {
-            m
-        };
+        let effective = if m.is_empty() { tier_default } else { m };
         if effective == "real" {
             Tier::Real
         } else {

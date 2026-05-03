@@ -27,7 +27,8 @@ fn main() -> Result<()> {
             .as_ref()
             .map(|p| p.to_string_lossy().into_owned());
         let engine = engine_str.as_deref();
-        match runner::run(&spec, engine) {
+        let tier = args.tier.as_deref();
+        match runner::run(&spec, engine, tier) {
             Ok(outcome) => {
                 report::write(&args.out, &outcome)?;
                 replay::write(&args.out, &spec, &outcome)?;
