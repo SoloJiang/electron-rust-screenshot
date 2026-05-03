@@ -25,8 +25,10 @@ impl EngineChild {
             .context("failed to create listener")?;
 
         let engine = engine_path.unwrap_or("./dist/index.js");
+        let engine_quoted =
+            serde_json::to_string(engine).unwrap_or_else(|_| format!("\"{}\"", engine));
         let script = format!(
-            "const {{start}} = require('{engine}'); \
+            "const {{start}} = require({engine_quoted}); \
              const cfg = {setup_json}; \
              try {{ \
                const r = start(cfg); \
@@ -107,6 +109,7 @@ fn accept_with_timeout(
         Err(_) => {
             cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
             let _ = process.kill();
+            let _ = process.wait();
             Err(anyhow!(
                 "engine child did not connect within {:?}",
                 CONNECT_TIMEOUT

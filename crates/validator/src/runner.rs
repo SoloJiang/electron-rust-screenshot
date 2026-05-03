@@ -49,6 +49,7 @@ pub fn run(
 
     // Wait for hello
     let hello_deadline = Instant::now() + Duration::from_secs(2);
+    let mut hello_seen = false;
     while Instant::now() < hello_deadline {
         let tl = timeline.lock().unwrap();
         if tl
@@ -56,10 +57,14 @@ pub fn run(
             .iter()
             .any(|e| matches!(e.message, ServerMessage::Hello { .. }))
         {
+            hello_seen = true;
             break;
         }
         drop(tl);
         thread::sleep(Duration::from_millis(20));
+    }
+    if !hello_seen {
+        return Err(anyhow!("engine did not send hello within 2s"));
     }
 
     // Drive steps
