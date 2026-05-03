@@ -86,7 +86,7 @@ pub fn run(
         }
         let tier_default = tier_override.unwrap_or(&spec.meta.tier);
         match translate_step(step, &mut seq, tier_default) {
-            Some(StepAction::Send(cmd)) => {
+            Ok(Some(StepAction::Send(cmd))) => {
                 let cmd_seq = cmd.seq();
                 client.send(&cmd)?;
                 let ack_deadline = Instant::now() + Duration::from_secs(2);
@@ -112,7 +112,7 @@ pub fn run(
                     ));
                 }
             }
-            Some(StepAction::WaitFor { event, timeout_ms }) => {
+            Ok(Some(StepAction::WaitFor { event, timeout_ms })) => {
                 let deadline = Instant::now() + Duration::from_millis(timeout_ms);
                 let mut found = false;
                 while Instant::now() < deadline {
@@ -139,8 +139,9 @@ pub fn run(
                     ));
                 }
             }
-            Some(StepAction::Sleep(ms)) => thread::sleep(Duration::from_millis(ms)),
-            None => {}
+            Ok(Some(StepAction::Sleep(ms))) => thread::sleep(Duration::from_millis(ms)),
+            Ok(None) => {}
+            Err(e) => return Err(anyhow!(e)),
         }
     }
 
@@ -198,15 +199,19 @@ enum StepAction {
     Sleep(u64),
 }
 
-fn translate_step(step: &Step, seq: &mut u64, tier_default: &str) -> Option<StepAction> {
+fn translate_step(
+    step: &Step,
+    seq: &mut u64,
+    tier_default: &str,
+) -> Result<Option<StepAction>, String> {
     let s = *seq;
     *seq += 1;
-    let mode = |m: &str| {
+    let mode = |m: &str| -> Result<Tier, String> {
         let effective = if m.is_empty() { tier_default } else { m };
-        if effective == "real" {
-            Tier::Real
-        } else {
-            Tier::Scripted
+        match effective {
+            "real" => Ok(Tier::Real),
+            "scripted" => Ok(Tier::Scripted),
+            _ => Err(format!("invalid mode: '{effective}'")),
         }
     };
     match step {
@@ -216,100 +221,101 @@ fn translate_step(step: &Step, seq: &mut u64, tier_default: &str) -> Option<Step
             button,
             modifiers,
             mode: m,
-        } => Some(StepAction::Send(Command::MouseDown {
+        } => Ok(Some(StepAction::Send(Command::MouseDown {
             seq: s,
             x: *x,
             y: *y,
-            button: parse_button(button),
+            button: parse_button(button)?,
             modifiers: modifiers.clone(),
-            mode: mode(m),
-        })),
-        Step::MouseMove { x, y, mode: m } => Some(StepAction::Send(Command::MouseMove {
+            mode: mode(m)?,
+        }))),
+        Step::MouseMove { x, y, mode: m } => Ok(Some(StepAction::Send(Command::MouseMove {
             seq: s,
             x: *x,
             y: *y,
-            mode: mode(m),
-        })),
+            mode: mode(m)?,
+        }))),
         Step::MouseUp {
             x,
             y,
             button,
             modifiers,
             mode: m,
-        } => Some(StepAction::Send(Command::MouseUp {
+        } => Ok(Some(StepAction::Send(Command::MouseUp {
             seq: s,
             x: *x,
             y: *y,
-            button: parse_button(button),
+            button: parse_button(button)?,
             modifiers: modifiers.clone(),
-            mode: mode(m),
-        })),
+            mode: mode(m)?,
+        }))),
         Step::Drag {
             from,
             to,
             button,
             modifiers,
             mode: m,
-        } => Some(StepAction::Send(Command::Drag {
+        } => Ok(Some(StepAction::Send(Command::Drag {
             seq: s,
             from: harness_protocol::DragPoint {
                 x: from[0],
                 y: from[1],
             },
             to: harness_protocol::DragPoint { x: to[0], y: to[1] },
-            button: parse_button(button),
+            button: parse_button(button)?,
             modifiers: modifiers.clone(),
-            mode: mode(m),
-        })),
+            mode: mode(m)?,
+        }))),
         Step::KeyPress {
             key,
             modifiers,
             mode: m,
-        } => Some(StepAction::Send(Command::KeyPress {
+        } => Ok(Some(StepAction::Send(Command::KeyPress {
             seq: s,
             key: key.clone(),
             modifiers: modifiers.clone(),
-            mode: mode(m),
-        })),
-        Step::TextInput { text, mode: m } => Some(StepAction::Send(Command::TextInput {
+            mode: mode(m)?,
+        }))),
+        Step::TextInput { text, mode: m } => Ok(Some(StepAction::Send(Command::TextInput {
             seq: s,
             text: text.clone(),
-            mode: mode(m),
-        })),
-        Step::ToolSet { tool, mode: m } => Some(StepAction::Send(Command::ToolSet {
+            mode: mode(m)?,
+        }))),
+        Step::ToolSet { tool, mode: m } => Ok(Some(StepAction::Send(Command::ToolSet {
             seq: s,
             tool: tool.clone(),
-            mode: mode(m),
-        })),
-        Step::Save { mode: m } => Some(StepAction::Send(Command::Save {
+            mode: mode(m)?,
+        }))),
+        Step::Save { mode: m } => Ok(Some(StepAction::Send(Command::Save {
             seq: s,
-            mode: mode(m),
-        })),
-        Step::Cancel { mode: m } => Some(StepAction::Send(Command::Cancel {
+            mode: mode(m)?,
+        }))),
+        Step::Cancel { mode: m } => Ok(Some(StepAction::Send(Command::Cancel {
             seq: s,
-            mode: mode(m),
-        })),
-        Step::SnapshotRequest => Some(StepAction::Send(Command::SnapshotRequest { seq: s })),
+            mode: mode(m)?,
+        }))),
+        Step::SnapshotRequest => Ok(Some(StepAction::Send(Command::SnapshotRequest { seq: s }))),
         Step::Composite { save_path, format } => {
-            Some(StepAction::Send(Command::CompositeRequest {
+            Ok(Some(StepAction::Send(Command::CompositeRequest {
                 seq: s,
                 save_path: save_path.clone(),
                 format: format.clone(),
-            }))
+            })))
         }
-        Step::Sleep { ms } => Some(StepAction::Sleep(*ms)),
-        Step::WaitFor { event, timeout_ms } => Some(StepAction::WaitFor {
+        Step::Sleep { ms } => Ok(Some(StepAction::Sleep(*ms))),
+        Step::WaitFor { event, timeout_ms } => Ok(Some(StepAction::WaitFor {
             event: event.clone(),
             timeout_ms: *timeout_ms,
-        }),
+        })),
     }
 }
 
-fn parse_button(s: &str) -> MouseButton {
+fn parse_button(s: &str) -> Result<MouseButton, String> {
     match s {
-        "right" => MouseButton::Right,
-        "middle" => MouseButton::Middle,
-        _ => MouseButton::Left,
+        "right" => Ok(MouseButton::Right),
+        "middle" => Ok(MouseButton::Middle),
+        "left" => Ok(MouseButton::Left),
+        _ => Err(format!("invalid button: '{s}'")),
     }
 }
 
