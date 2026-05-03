@@ -183,7 +183,7 @@ impl ApplicationHandler for MultiWindowApp {
             let max_texture_side =
                 unsafe { gl.gl.get_parameter_i32(glow::MAX_TEXTURE_SIZE) as usize };
             let egui_ctx = egui::Context::default();
-            let egui_state = EguiState::new(
+            let mut egui_state = EguiState::new(
                 egui_ctx.clone(),
                 egui::ViewportId::default(),
                 &window,
@@ -191,6 +191,11 @@ impl ApplicationHandler for MultiWindowApp {
                 None,
                 Some(max_texture_side),
             );
+
+            // Prime the egui context with the correct max_texture_side
+            // before loading screenshot textures, which may exceed the default 2048 limit.
+            let raw_input = egui_state.take_egui_input(&window);
+            let _ = egui_ctx.run(raw_input, |_| {});
 
             // Each window gets ALL frames so cross-screen content renders correctly
             let engine_frames = self.engine.lock().frames.clone();

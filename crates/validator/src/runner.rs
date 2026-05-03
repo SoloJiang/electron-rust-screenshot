@@ -39,6 +39,12 @@ pub fn run(
                 Ok(Some(msg)) => timeline_for_thread.lock().unwrap().record(msg),
                 Ok(None) => break,
                 Err(e) => {
+                    if e.downcast_ref::<std::io::Error>()
+                        .is_some_and(|io| io.kind() == std::io::ErrorKind::WouldBlock)
+                    {
+                        thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
                     log::warn!("recv error: {e}");
                     break;
                 }
@@ -71,18 +77,12 @@ pub fn run(
     let started = Instant::now();
     let spec_deadline = started + Duration::from_millis(spec.meta.timeout_ms);
     let mut seq = 1u64;
-    let mut timeline_cursor;
     for step in &spec.steps {
         if Instant::now() > spec_deadline {
             return Err(anyhow!(
                 "spec timeout exceeded ({} ms)",
                 spec.meta.timeout_ms
             ));
-        }
-        {
-            let tl = timeline.lock().unwrap();
-            timeline_cursor = tl.entries.len();
-            drop(tl);
         }
         let tier_default = tier_override.unwrap_or(&spec.meta.tier);
         match translate_step(step, &mut seq, tier_default) {
@@ -117,7 +117,8 @@ pub fn run(
                 let mut found = false;
                 while Instant::now() < deadline {
                     let tl = timeline.lock().unwrap();
-                    if tl.entries[timeline_cursor..]
+                    if tl
+                        .entries
                         .iter()
                         .filter_map(|e| match &e.message {
                             ServerMessage::EngineEvent { payload, .. } => Some(payload),
