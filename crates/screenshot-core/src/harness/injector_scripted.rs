@@ -119,12 +119,15 @@ pub fn run_scripted(engine: &mut Engine, cmd: &Command) -> InjectorResult {
             None => InjectorResult::Failed(format!("InvalidArguments:tool={}", tool)),
         },
         Command::SnapshotRequest { .. } => InjectorResult::Ok,
-        Command::CompositeRequest { save_path, .. } => {
-            match crate::overlay::save::composite_image(&engine.frames, &engine.editor) {
-                Ok(img) => match img.save(save_path) {
-                    Ok(_) => InjectorResult::Ok,
-                    Err(e) => InjectorResult::Failed(format!("InjectorFailure:{}", e)),
-                },
+        Command::CompositeRequest { save_path, format, .. } => {
+            match crate::overlay::save::composite_and_save(
+                &engine.frames,
+                &engine.editor,
+                save_path,
+                format,
+                90,
+            ) {
+                Ok(_) => InjectorResult::Ok,
                 Err(e) => InjectorResult::Failed(format!("InjectorFailure:{}", e)),
             }
         }

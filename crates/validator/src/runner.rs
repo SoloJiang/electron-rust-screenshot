@@ -81,7 +81,32 @@ pub fn run(
         }
         let tier_default = tier_override.unwrap_or(&spec.meta.tier);
         match translate_step(step, &mut seq, tier_default) {
-            Some(StepAction::Send(cmd)) => client.send(&cmd)?,
+            Some(StepAction::Send(cmd)) => {
+                let cmd_seq = cmd.seq();
+                client.send(&cmd)?;
+                let ack_deadline = Instant::now() + Duration::from_secs(2);
+                let mut ack_ok = false;
+                let mut ack_error = None;
+                while Instant::now() < ack_deadline {
+                    let tl = timeline.lock().unwrap();
+                    if let Some(ack) = tl.entries.iter().rev().find_map(|e| match &e.message {
+                        ServerMessage::CommandAck(ack) if ack.ref_seq == cmd_seq => Some(ack),
+                        _ => None,
+                    }) {
+                        ack_ok = ack.ok;
+                        ack_error = ack.error.clone();
+                        break;
+                    }
+                    drop(tl);
+                    thread::sleep(Duration::from_millis(10));
+                }
+                if !ack_ok {
+                    return Err(anyhow!(
+                        "command seq={cmd_seq} failed: {}",
+                        ack_error.unwrap_or_else(|| "no ack received".into())
+                    ));
+                }
+            }
             Some(StepAction::WaitFor { event, timeout_ms }) => {
                 let deadline = Instant::now() + Duration::from_millis(timeout_ms);
                 let mut found = false;
