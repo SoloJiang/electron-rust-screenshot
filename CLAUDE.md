@@ -185,3 +185,16 @@ E2E 套件（`e2e/`）通过 AppleScript 调用 `cliclick` 模拟鼠标/键盘�
 - **代码质量**：坚持清晰的错误传播（优先 `Result` 而非 `unwrap`/`expect`），避免在 GUI 初始化路径中吞掉错误；unsafe block 需最小化并封装成可审查的边界层。
 - **职责明确**：`screenshot-core` 中不应出现 `napi` 依赖或 Node 相关逻辑；`napi-bindings` 层只做数据转换与 API 暴露。overlay 只负责渲染与事件分发，合成算法放在 `save.rs`，状态机放在 `engine.rs`。
 - **可测试**：核心业务逻辑（engine、editor、composite、geometry）必须能在不启动窗口系统的情况下通过单元/集成测试覆盖。新增功能时同步添加测试；mock 实现参考 `capture.rs` 中的 `MockCapture`。
+
+## 常见陷阱与工具链
+
+### Validator / Harness Gotchas
+
+- `interprocess::TryClone` blanket impl：`&T` implements `TryClone` if `T: Clone`，所以 `listener.try_clone()` 在 `&Listener` 上会返回 `Result<&Listener>`。应直接传递 owned `Listener` 来避免。
+- `cargo fmt --all` 会就地修改文件 —— 如果上次 `Read` 之后执行过 fmt，编辑前必须重新 `Read`。
+
+### GitHub PR Review Workflow
+
+- Resolve review thread 必须用 GraphQL：`mutation { resolveReviewThread(input: {threadId: "PRRT_..."}) }`
+- 回复 review comment：`gh api repos/{o}/{r}/pulls/{n}/comments/{id}/replies -f body="..."`
+- 列出 review comments：`gh api repos/{o}/{r}/pulls/{n}/comments --paginate`
