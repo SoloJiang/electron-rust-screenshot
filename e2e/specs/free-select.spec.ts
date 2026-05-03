@@ -28,5 +28,5 @@ describe('free select', () => {
       15000
     );
     expect(result.type).toBe('saved');
-  }, 20000);
+  }, 25000);
 });

@@ -1,8 +1,8 @@
 use crate::bridge::events_js::serialize_event;
-use screenshot_core::core::engine::Engine;
 use napi_derive::napi;
-use std::sync::Arc;
 use parking_lot::Mutex;
+use screenshot_core::core::engine::Engine;
+use std::sync::Arc;
 
 #[napi]
 pub struct ScreenshotSession {

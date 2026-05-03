@@ -1,0 +1,59 @@
+[meta]
+name = "asserts_demo"
+tier = "scripted"
+timeout_ms = 10000
+description = "Smoke test that exercises every assertion kind"
+
+[setup]
+save_path = "/tmp/validator-asserts-demo.png"
+format = "png"
+
+[[steps]]
+kind = "wait_for"
+event = "started"
+timeout_ms = 3000
+
+[[steps]]
+kind = "drag"
+from = [120, 140]
+to = [380, 360]
+
+[[steps]]
+kind = "wait_for"
+event = "regionSelected"
+timeout_ms = 2000
+
+[[steps]]
+kind = "save"
+
+[[steps]]
+kind = "wait_for"
+event = "saved"
+timeout_ms = 3000
+
+[[asserts]]
+kind = "event_emitted"
+event = "regionSelected"
+
+[[asserts]]
+kind = "event_emitted"
+event = "saved"
+
+[[asserts]]
+kind = "artifact_exists"
+path = "/tmp/validator-asserts-demo.png"
+
+[[asserts]]
+kind = "artifact_dimensions"
+path = "/tmp/validator-asserts-demo.png"
+width = 260
+height = 220
+
+[[asserts]]
+kind = "performance"
+metric = "capture_ms"
+max_ms = 5000.0
+
+[[asserts]]
+kind = "no_event"
+event = "error"

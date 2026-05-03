@@ -23,7 +23,8 @@ pub fn setup_window(window: &Window) {
                     let _: () = msg_send![ns_window, setLevel: level];
                     let behavior: i64 = 2; // NSWindowAnimationBehaviorNone
                     let _: () = msg_send![ns_window, setAnimationBehavior: behavior];
-                    let _: () = msg_send![ns_window, makeKeyAndOrderFront: std::ptr::null_mut::<Object>()];
+                    let _: () =
+                        msg_send![ns_window, makeKeyAndOrderFront: std::ptr::null_mut::<Object>()];
                 }
             }
         }

@@ -1,6 +1,7 @@
 use super::types::{Color, LogicalPoint, Rect};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tool {
     Select,
     Rect,
@@ -11,7 +12,23 @@ pub enum Tool {
     Text,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl Tool {
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "Select" => Some(Tool::Select),
+            "Rect" => Some(Tool::Rect),
+            "Ellipse" => Some(Tool::Ellipse),
+            "Arrow" => Some(Tool::Arrow),
+            "Brush" => Some(Tool::Brush),
+            "Mosaic" => Some(Tool::Mosaic),
+            "Text" => Some(Tool::Text),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Layer {
     ShapeRect {
         id: String,
@@ -54,9 +71,17 @@ pub enum Layer {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LayerOp {
-    AddLayer { layer: Layer },
-    DeleteLayer { layer: Layer },
-    UpdateLayer { id: String, old: Layer, new: Layer },
+    AddLayer {
+        layer: Layer,
+    },
+    DeleteLayer {
+        layer: Layer,
+    },
+    UpdateLayer {
+        id: String,
+        old: Layer,
+        new: Layer,
+    },
     UpdateSelectionAndLayers {
         old_selection: Option<Rect>,
         new_selection: Option<Rect>,
@@ -125,8 +150,12 @@ impl EditorState {
                         self.redo_stack.push(op);
                     }
                 }
-                LayerOp::UpdateSelectionAndLayers { old_selection, old_layers, .. } => {
-                    self.selection = old_selection.clone();
+                LayerOp::UpdateSelectionAndLayers {
+                    old_selection,
+                    old_layers,
+                    ..
+                } => {
+                    self.selection = *old_selection;
                     self.layers = old_layers.clone();
                     self.redo_stack.push(op);
                 }
@@ -165,8 +194,12 @@ impl EditorState {
                         });
                     }
                 }
-                LayerOp::UpdateSelectionAndLayers { new_selection, new_layers, .. } => {
-                    self.selection = new_selection.clone();
+                LayerOp::UpdateSelectionAndLayers {
+                    new_selection,
+                    new_layers,
+                    ..
+                } => {
+                    self.selection = *new_selection;
                     self.layers = new_layers.clone();
                     self.undo_stack.push(op);
                 }
@@ -301,13 +334,7 @@ impl EditorState {
     }
 }
 
-fn transform_layer(
-    layer: &Layer,
-    original: Rect,
-    new_rect: Rect,
-    sx: f64,
-    sy: f64,
-) -> Layer {
+fn transform_layer(layer: &Layer, original: Rect, new_rect: Rect, sx: f64, sy: f64) -> Layer {
     let norm_x = |x: f64| -> f64 {
         if original.w == 0.0 {
             0.0
@@ -580,11 +607,11 @@ mod tests {
             color: Color::new(0, 255, 0, 255),
         }];
 
-        state.selection = new_selection.clone();
+        state.selection = new_selection;
         state.layers = new_layers.clone();
         state.undo_stack.push(LayerOp::UpdateSelectionAndLayers {
-            old_selection: old_selection.clone(),
-            new_selection: new_selection.clone(),
+            old_selection,
+            new_selection,
             old_layers: old_layers.clone(),
             new_layers: new_layers.clone(),
         });

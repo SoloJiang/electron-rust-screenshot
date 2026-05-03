@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Rect {
     pub x: f64,
     pub y: f64,
@@ -154,7 +156,7 @@ pub fn subtract_rect(target: Rect, cut: Rect) -> Vec<Rect> {
     result
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LogicalPoint {
     pub x: f64,
     pub y: f64,
@@ -172,7 +174,7 @@ impl LogicalPoint {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Color {
     pub r: u8,
     pub g: u8,
@@ -186,15 +188,19 @@ impl Color {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScreenInfo {
     pub id: String,
     pub name: String,
     pub logical_bounds: Rect,
     pub dpi_scale: f64,
+    #[serde(default)]
+    pub physical_origin: (i32, i32),
+    #[serde(default)]
+    pub is_primary: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Edge {
     North,
     South,
@@ -202,7 +208,7 @@ pub enum Edge {
     West,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Corner {
     NW,
     NE,
@@ -210,14 +216,14 @@ pub enum Corner {
     SE,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ResizeHit {
     Move,
     ResizeEdge { edge: Edge },
     ResizeCorner { corner: Corner },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DetectedWindow {
     pub id: String,
     pub title: String,
@@ -265,38 +271,74 @@ mod tests {
     #[test]
     fn resize_hit_center_is_move() {
         let r = Rect::new(100.0, 100.0, 100.0, 100.0);
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(150.0, 150.0), 20.0), Some(ResizeHit::Move));
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(150.0, 150.0), 20.0),
+            Some(ResizeHit::Move)
+        );
     }
 
     #[test]
     fn resize_hit_corners() {
         let r = Rect::new(100.0, 100.0, 100.0, 100.0);
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(105.0, 105.0), 20.0), Some(ResizeHit::ResizeCorner { corner: Corner::NW }));
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(195.0, 105.0), 20.0), Some(ResizeHit::ResizeCorner { corner: Corner::NE }));
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(105.0, 195.0), 20.0), Some(ResizeHit::ResizeCorner { corner: Corner::SW }));
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(195.0, 195.0), 20.0), Some(ResizeHit::ResizeCorner { corner: Corner::SE }));
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(105.0, 105.0), 20.0),
+            Some(ResizeHit::ResizeCorner { corner: Corner::NW })
+        );
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(195.0, 105.0), 20.0),
+            Some(ResizeHit::ResizeCorner { corner: Corner::NE })
+        );
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(105.0, 195.0), 20.0),
+            Some(ResizeHit::ResizeCorner { corner: Corner::SW })
+        );
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(195.0, 195.0), 20.0),
+            Some(ResizeHit::ResizeCorner { corner: Corner::SE })
+        );
     }
 
     #[test]
     fn resize_hit_edges() {
         let r = Rect::new(100.0, 100.0, 100.0, 100.0);
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(150.0, 105.0), 20.0), Some(ResizeHit::ResizeEdge { edge: Edge::North }));
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(150.0, 195.0), 20.0), Some(ResizeHit::ResizeEdge { edge: Edge::South }));
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(105.0, 150.0), 20.0), Some(ResizeHit::ResizeEdge { edge: Edge::West }));
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(195.0, 150.0), 20.0), Some(ResizeHit::ResizeEdge { edge: Edge::East }));
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(150.0, 105.0), 20.0),
+            Some(ResizeHit::ResizeEdge { edge: Edge::North })
+        );
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(150.0, 195.0), 20.0),
+            Some(ResizeHit::ResizeEdge { edge: Edge::South })
+        );
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(105.0, 150.0), 20.0),
+            Some(ResizeHit::ResizeEdge { edge: Edge::West })
+        );
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(195.0, 150.0), 20.0),
+            Some(ResizeHit::ResizeEdge { edge: Edge::East })
+        );
     }
 
     #[test]
     fn resize_hit_outside_is_none() {
         let r = Rect::new(100.0, 100.0, 100.0, 100.0);
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(0.0, 0.0), 20.0), None);
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(250.0, 150.0), 20.0), None);
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(0.0, 0.0), 20.0),
+            None
+        );
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(250.0, 150.0), 20.0),
+            None
+        );
     }
 
     #[test]
     fn resize_hit_empty_rect_is_none() {
         let r = Rect::new(100.0, 100.0, 0.0, 50.0);
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(100.0, 125.0), 20.0), None);
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(100.0, 125.0), 20.0),
+            None
+        );
     }
 
     #[test]
@@ -326,10 +368,19 @@ mod tests {
     fn resize_hit_handle_size_zero() {
         let r = Rect::new(100.0, 100.0, 100.0, 100.0);
         // Strictly inside -> Move
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(150.0, 150.0), 0.0), Some(ResizeHit::Move));
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(150.0, 150.0), 0.0),
+            Some(ResizeHit::Move)
+        );
         // Exactly on lower border -> inside due to contains lower-bound inclusivity, so Move
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(100.0, 100.0), 0.0), Some(ResizeHit::Move));
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(100.0, 100.0), 0.0),
+            Some(ResizeHit::Move)
+        );
         // Exactly on upper x border -> outside due to contains upper-bound exclusivity, so None
-        assert_eq!(r.hit_test_resize_handle(LogicalPoint::new(200.0, 150.0), 0.0), None);
+        assert_eq!(
+            r.hit_test_resize_handle(LogicalPoint::new(200.0, 150.0), 0.0),
+            None
+        );
     }
 }

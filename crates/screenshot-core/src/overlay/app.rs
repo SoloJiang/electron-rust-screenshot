@@ -3,8 +3,8 @@ use crate::core::engine::Engine;
 use crate::core::types::{Color, Corner, Edge, LogicalPoint, Rect, ResizeHit};
 use crate::overlay::toolbar::draw_toolbar;
 use egui::{Color32, Rect as EguiRect, Rounding, Stroke};
-use std::sync::Arc;
 use parking_lot::Mutex;
+use std::sync::Arc;
 
 pub struct ScreenshotApp {
     pub engine: Arc<Mutex<Engine>>,
@@ -29,7 +29,7 @@ impl ScreenshotApp {
             let pixels = img.as_raw();
             let color_image = egui::ColorImage::from_rgba_unmultiplied([width, height], pixels);
             self.frame_textures[i] = Some(ctx.load_texture(
-                &format!("screenshot-{}", frame.screen_id),
+                format!("screenshot-{}", frame.screen_id),
                 color_image,
                 Default::default(),
             ));
@@ -57,7 +57,10 @@ impl ScreenshotApp {
     fn draw_unmasked_region(&self, painter: &egui::Painter, region: Rect, offset: LogicalPoint) {
         let clip = egui::Rect::from_min_max(
             egui::pos2((region.x - offset.x) as f32, (region.y - offset.y) as f32),
-            egui::pos2((region.x + region.w - offset.x) as f32, (region.y + region.h - offset.y) as f32),
+            egui::pos2(
+                (region.x + region.w - offset.x) as f32,
+                (region.y + region.h - offset.y) as f32,
+            ),
         );
         let clipped = painter.with_clip_rect(clip);
         self.draw_screenshot_textures(&clipped, offset);
@@ -92,14 +95,18 @@ impl ScreenshotApp {
             }
             if pointer.any_pressed() {
                 if let Some(pos) = pointer.press_origin() {
-                    engine.on_mouse_down(LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y));
+                    engine.on_mouse_down(LogicalPoint::new(
+                        pos.x as f64 + offset.x,
+                        pos.y as f64 + offset.y,
+                    ));
                 }
             }
             if pointer.any_released() {
                 if let Some(pos) = pointer.latest_pos() {
-                    engine.on_mouse_up(
-                        LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y),
-                    );
+                    engine.on_mouse_up(LogicalPoint::new(
+                        pos.x as f64 + offset.x,
+                        pos.y as f64 + offset.y,
+                    ));
                 }
             }
             if pointer.button_double_clicked(egui::PointerButton::Primary) {
@@ -109,24 +116,29 @@ impl ScreenshotApp {
             match &mut engine.state {
                 crate::core::engine::EngineState::OverlayRunning => {
                     // Dark mask over everything
-                    ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
+                    ui.painter()
+                        .rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
 
                     if let Some(win) = &engine.hovered_window {
                         const STROKE: f64 = 2.0;
-                        self.draw_unmasked_region(ui.painter(), inset_rect(win.bounds, STROKE), offset);
+                        self.draw_unmasked_region(
+                            ui.painter(),
+                            inset_rect(win.bounds, STROKE),
+                            offset,
+                        );
                         let clip = egui_rect_from_logical(win.bounds, offset);
-                        let stroke_rect = egui_rect_from_logical(inset_rect(win.bounds, STROKE * 0.5), offset);
-                        ui.painter()
-                            .with_clip_rect(clip)
-                            .rect_stroke(
-                                stroke_rect,
-                                Rounding::ZERO,
-                                Stroke::new(STROKE as f32, Color32::from_rgb(0, 120, 255)),
-                            );
+                        let stroke_rect =
+                            egui_rect_from_logical(inset_rect(win.bounds, STROKE * 0.5), offset);
+                        ui.painter().with_clip_rect(clip).rect_stroke(
+                            stroke_rect,
+                            Rounding::ZERO,
+                            Stroke::new(STROKE as f32, Color32::from_rgb(0, 120, 255)),
+                        );
                     }
                 }
                 crate::core::engine::EngineState::FreeSelecting { start, current } => {
-                    ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
+                    ui.painter()
+                        .rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
                     let sel = Rect::new(
                         start.x.min(current.x),
                         start.y.min(current.y),
@@ -137,25 +149,25 @@ impl ScreenshotApp {
                     self.draw_unmasked_region(ui.painter(), inset_rect(sel, STROKE), offset);
                     let clip = egui_rect_from_logical(sel, offset);
                     let stroke_rect = egui_rect_from_logical(inset_rect(sel, STROKE * 0.5), offset);
-                    ui.painter()
-                        .with_clip_rect(clip)
-                        .rect_stroke(
-                            stroke_rect,
-                            Rounding::ZERO,
-                            Stroke::new(STROKE as f32, Color32::from_rgb(0, 120, 255)),
-                        );
+                    ui.painter().with_clip_rect(clip).rect_stroke(
+                        stroke_rect,
+                        Rounding::ZERO,
+                        Stroke::new(STROKE as f32, Color32::from_rgb(0, 120, 255)),
+                    );
                 }
                 crate::core::engine::EngineState::Editing => {
                     if let Some(sel) = engine.editor.selection {
                         let logical_pos = pointer.latest_pos().map(|pos| {
                             LogicalPoint::new(pos.x as f64 + offset.x, pos.y as f64 + offset.y)
                         });
-                        let resize_hit = logical_pos.and_then(|p| sel.hit_test_resize_handle(p, 8.0));
+                        let resize_hit =
+                            logical_pos.and_then(|p| sel.hit_test_resize_handle(p, 8.0));
 
                         let in_selection = logical_pos.map(|p| sel.contains(p)).unwrap_or(true);
                         let in_transform_zone = resize_hit.is_some();
 
-                        let can_move = engine.editor.active_tool == crate::core::editor::Tool::Select;
+                        let can_move =
+                            engine.editor.active_tool == crate::core::editor::Tool::Select;
 
                         // Event routing
                         if engine.selection_transform.is_some() {
@@ -195,7 +207,8 @@ impl ScreenshotApp {
                             if pointer.is_decidedly_dragging() {
                                 if let Some(pos) = logical_pos {
                                     let is_move_zone = resize_hit == Some(ResizeHit::Move);
-                                    if engine.edit_drag_start.is_some() && is_move_zone && can_move {
+                                    if engine.edit_drag_start.is_some() && is_move_zone && can_move
+                                    {
                                         engine.abort_edit_drag();
                                         engine.on_selection_transform_start(pos, ResizeHit::Move);
                                     } else {
@@ -220,18 +233,18 @@ impl ScreenshotApp {
                                         egui::CursorIcon::Default
                                     }
                                 }
-                                ResizeHit::ResizeEdge { edge: Edge::North | Edge::South } => {
-                                    egui::CursorIcon::ResizeVertical
-                                }
-                                ResizeHit::ResizeEdge { edge: Edge::East | Edge::West } => {
-                                    egui::CursorIcon::ResizeHorizontal
-                                }
-                                ResizeHit::ResizeCorner { corner: Corner::NW | Corner::SE } => {
-                                    egui::CursorIcon::ResizeNwSe
-                                }
-                                ResizeHit::ResizeCorner { corner: Corner::NE | Corner::SW } => {
-                                    egui::CursorIcon::ResizeNeSw
-                                }
+                                ResizeHit::ResizeEdge {
+                                    edge: Edge::North | Edge::South,
+                                } => egui::CursorIcon::ResizeVertical,
+                                ResizeHit::ResizeEdge {
+                                    edge: Edge::East | Edge::West,
+                                } => egui::CursorIcon::ResizeHorizontal,
+                                ResizeHit::ResizeCorner {
+                                    corner: Corner::NW | Corner::SE,
+                                } => egui::CursorIcon::ResizeNwSe,
+                                ResizeHit::ResizeCorner {
+                                    corner: Corner::NE | Corner::SW,
+                                } => egui::CursorIcon::ResizeNeSw,
                             });
                         } else if let Some(hit) = resize_hit {
                             ui.ctx().set_cursor_icon(match hit {
@@ -242,58 +255,71 @@ impl ScreenshotApp {
                                         egui::CursorIcon::Default
                                     }
                                 }
-                                ResizeHit::ResizeEdge { edge: Edge::North | Edge::South } => {
-                                    egui::CursorIcon::ResizeVertical
-                                }
-                                ResizeHit::ResizeEdge { edge: Edge::East | Edge::West } => {
-                                    egui::CursorIcon::ResizeHorizontal
-                                }
-                                ResizeHit::ResizeCorner { corner: Corner::NW | Corner::SE } => {
-                                    egui::CursorIcon::ResizeNwSe
-                                }
-                                ResizeHit::ResizeCorner { corner: Corner::NE | Corner::SW } => {
-                                    egui::CursorIcon::ResizeNeSw
-                                }
+                                ResizeHit::ResizeEdge {
+                                    edge: Edge::North | Edge::South,
+                                } => egui::CursorIcon::ResizeVertical,
+                                ResizeHit::ResizeEdge {
+                                    edge: Edge::East | Edge::West,
+                                } => egui::CursorIcon::ResizeHorizontal,
+                                ResizeHit::ResizeCorner {
+                                    corner: Corner::NW | Corner::SE,
+                                } => egui::CursorIcon::ResizeNwSe,
+                                ResizeHit::ResizeCorner {
+                                    corner: Corner::NE | Corner::SW,
+                                } => egui::CursorIcon::ResizeNeSw,
                             });
                         } else {
                             ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
                         }
 
-                        let screen_rect = Rect::new(offset.x, offset.y, rect.width() as f64, rect.height() as f64);
+                        let screen_rect = Rect::new(
+                            offset.x,
+                            offset.y,
+                            rect.width() as f64,
+                            rect.height() as f64,
+                        );
                         if sel.intersects(screen_rect) {
                             // Uniform mask over entire screen
-                            ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
+                            ui.painter().rect_filled(
+                                rect,
+                                Rounding::ZERO,
+                                Color32::from_black_alpha(120),
+                            );
 
                             // Unmask the selected region (inset by border width for border-box look)
                             const STROKE: f64 = 2.0;
-                            self.draw_unmasked_region(ui.painter(), inset_rect(sel, STROKE), offset);
+                            self.draw_unmasked_region(
+                                ui.painter(),
+                                inset_rect(sel, STROKE),
+                                offset,
+                            );
                             // Blue selection border (same as hover/window-select color)
                             let clip = egui_rect_from_logical(sel, offset);
-                            let sel_rect = egui_rect_from_logical(inset_rect(sel, STROKE * 0.5), offset);
-                            ui.painter()
-                                .with_clip_rect(clip)
-                                .rect_stroke(
-                                    sel_rect,
-                                    Rounding::ZERO,
-                                    Stroke::new(STROKE as f32, Color32::from_rgb(0, 120, 255)),
-                                );
+                            let sel_rect =
+                                egui_rect_from_logical(inset_rect(sel, STROKE * 0.5), offset);
+                            ui.painter().with_clip_rect(clip).rect_stroke(
+                                sel_rect,
+                                Rounding::ZERO,
+                                Stroke::new(STROKE as f32, Color32::from_rgb(0, 120, 255)),
+                            );
 
                             // Draw 8 resize handles
                             let handle_radius = 4.0;
                             let handle_stroke = Stroke::new(2.0, Color32::from_rgb(0, 120, 255));
                             let handle_positions = [
-                                (sel.x, sel.y),                         // NW
-                                (sel.x + sel.w / 2.0, sel.y),           // N
-                                (sel.x + sel.w, sel.y),                 // NE
-                                (sel.x + sel.w, sel.y + sel.h / 2.0),   // E
-                                (sel.x + sel.w, sel.y + sel.h),         // SE
-                                (sel.x + sel.w / 2.0, sel.y + sel.h),   // S
-                                (sel.x, sel.y + sel.h),                 // SW
-                                (sel.x, sel.y + sel.h / 2.0),           // W
+                                (sel.x, sel.y),                       // NW
+                                (sel.x + sel.w / 2.0, sel.y),         // N
+                                (sel.x + sel.w, sel.y),               // NE
+                                (sel.x + sel.w, sel.y + sel.h / 2.0), // E
+                                (sel.x + sel.w, sel.y + sel.h),       // SE
+                                (sel.x + sel.w / 2.0, sel.y + sel.h), // S
+                                (sel.x, sel.y + sel.h),               // SW
+                                (sel.x, sel.y + sel.h / 2.0),         // W
                             ];
                             for (hx, hy) in handle_positions {
                                 let hp = egui::pos2((hx - offset.x) as f32, (hy - offset.y) as f32);
-                                ui.painter().circle_filled(hp, handle_radius, Color32::WHITE);
+                                ui.painter()
+                                    .circle_filled(hp, handle_radius, Color32::WHITE);
                                 ui.painter().circle_stroke(hp, handle_radius, handle_stroke);
                             }
 
@@ -303,15 +329,16 @@ impl ScreenshotApp {
                                     (sel.x + sel.w / 2.0 - offset.x) as f32,
                                     (sel.y + sel.h - offset.y + 8.0) as f32,
                                 );
-                                let save_clicked = egui::Area::new(egui::Id::new("screenshot_toolbar"))
-                                    .pivot(egui::Align2::CENTER_TOP)
-                                    .fixed_pos(toolbar_pos)
-                                    .show(ctx, |ui| {
-                                        egui::Frame::window(&egui::Style::default())
-                                            .show(ui, |ui| draw_toolbar(ui, &mut engine.editor))
-                                            .inner
-                                    })
-                                    .inner;
+                                let save_clicked =
+                                    egui::Area::new(egui::Id::new("screenshot_toolbar"))
+                                        .pivot(egui::Align2::CENTER_TOP)
+                                        .fixed_pos(toolbar_pos)
+                                        .show(ctx, |ui| {
+                                            egui::Frame::window(&egui::Style::default())
+                                                .show(ui, |ui| draw_toolbar(ui, &mut engine.editor))
+                                                .inner
+                                        })
+                                        .inner;
                                 if save_clicked {
                                     engine.save();
                                 }
@@ -327,10 +354,18 @@ impl ScreenshotApp {
                                 draw_layer(ui.painter(), preview, offset);
                             }
                         } else {
-                            ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
+                            ui.painter().rect_filled(
+                                rect,
+                                Rounding::ZERO,
+                                Color32::from_black_alpha(120),
+                            );
                         }
                     } else {
-                        ui.painter().rect_filled(rect, Rounding::ZERO, Color32::from_black_alpha(120));
+                        ui.painter().rect_filled(
+                            rect,
+                            Rounding::ZERO,
+                            Color32::from_black_alpha(120),
+                        );
                     }
                 }
                 _ => {}

@@ -6,15 +6,12 @@ use crate::bridge::config::ScreenshotConfig;
 use crate::bridge::events_js::serialize_event;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use parking_lot::Mutex;
 use screenshot_core::{
-    core::engine::Engine,
-    core::events::EngineEvent,
-    core::types::Color,
-    core::window::WindowDetector,
-    overlay::manager::OverlayManager,
+    core::engine::Engine, core::events::EngineEvent, core::types::Color,
+    core::window::WindowDetector, overlay::manager::OverlayManager,
 };
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 #[napi]
 pub fn start(config: Option<ScreenshotConfig>) -> Result<String> {
@@ -55,7 +52,7 @@ pub fn start(config: Option<ScreenshotConfig>) -> Result<String> {
     let frames = engine.lock().frames.clone();
     OverlayManager::new(Arc::clone(&engine), frames)
         .run()
-        .map_err(|e| Error::from_reason(e))?;
+        .map_err(Error::from_reason)?;
 
     // Overlay closed, collect final event
     let mut events = Vec::new();

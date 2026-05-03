@@ -87,6 +87,11 @@ impl Engine {
                         name: format!("Screen {}", f.screen_id),
                         logical_bounds: f.logical_bounds,
                         dpi_scale: f.dpi_scale,
+                        physical_origin: (
+                            (f.logical_bounds.x * f.dpi_scale).round() as i32,
+                            (f.logical_bounds.y * f.dpi_scale).round() as i32,
+                        ),
+                        is_primary: false,
                     })
                     .collect();
                 self.frames = frames;
@@ -191,7 +196,8 @@ impl Engine {
     }
 
     pub fn select_hovered_window(&mut self) {
-        if let (EngineState::OverlayRunning, Some(win)) = (&self.state, self.hovered_window.clone()) {
+        if let (EngineState::OverlayRunning, Some(win)) = (&self.state, self.hovered_window.clone())
+        {
             let screen_id = self
                 .screen_at_point(LogicalPoint::new(win.bounds.x, win.bounds.y))
                 .unwrap_or_else(|| "primary".to_string());
@@ -248,7 +254,10 @@ impl Engine {
     }
 
     pub fn on_selection_transform_start(
-        &mut self, pos: LogicalPoint, kind: super::types::ResizeHit) {
+        &mut self,
+        pos: LogicalPoint,
+        kind: super::types::ResizeHit,
+    ) {
         if let EngineState::Editing = self.state {
             if let Some(sel) = self.editor.selection {
                 self.selection_transform = Some(SelectionTransformState {
@@ -263,13 +272,11 @@ impl Engine {
     }
 
     pub fn on_selection_transform_drag(&mut self, pos: LogicalPoint) {
-        if let (EngineState::Editing, Some(ref state)) =
+        if let (EngineState::Editing, Some(state)) =
             (&self.state, self.selection_transform.as_ref())
         {
-            let delta = LogicalPoint::new(
-                pos.x - state.start_pointer.x,
-                pos.y - state.start_pointer.y,
-            );
+            let delta =
+                LogicalPoint::new(pos.x - state.start_pointer.x, pos.y - state.start_pointer.y);
             let (new_rect, new_layers) = EditorState::transform_selection(
                 state.original_selection,
                 &state.original_layers,
@@ -282,18 +289,19 @@ impl Engine {
     }
 
     pub fn on_selection_transform_end(&mut self, _pos: LogicalPoint) {
-        if let (EngineState::Editing, Some(state)) =
-            (&self.state, self.selection_transform.take())
+        if let (EngineState::Editing, Some(state)) = (&self.state, self.selection_transform.take())
         {
             if self.editor.selection != Some(state.original_selection)
                 || self.editor.layers != state.original_layers
             {
-                self.editor.undo_stack.push(super::editor::LayerOp::UpdateSelectionAndLayers {
-                    old_selection: Some(state.original_selection),
-                    new_selection: self.editor.selection,
-                    old_layers: state.original_layers,
-                    new_layers: self.editor.layers.clone(),
-                });
+                self.editor
+                    .undo_stack
+                    .push(super::editor::LayerOp::UpdateSelectionAndLayers {
+                        old_selection: Some(state.original_selection),
+                        new_selection: self.editor.selection,
+                        old_layers: state.original_layers,
+                        new_layers: self.editor.layers.clone(),
+                    });
                 self.editor.redo_stack.clear();
             }
         }
@@ -309,7 +317,10 @@ impl Engine {
     }
 
     pub fn on_mouse_drag(&mut self, pos: LogicalPoint) {
-        if let EngineState::FreeSelecting { ref mut current, .. } = self.state {
+        if let EngineState::FreeSelecting {
+            ref mut current, ..
+        } = self.state
+        {
             *current = pos;
         }
     }
@@ -342,6 +353,77 @@ impl Engine {
                 self.select_region(screen_id, rect);
             }
         }
+    }
+
+    pub fn snapshot_state(&self) -> harness_protocol::StateSnapshot {
+        let state = match self.state {
+            EngineState::Idle => "Idle",
+            EngineState::Capturing => "Capturing",
+            EngineState::OverlayRunning => "OverlayRunning",
+            EngineState::FreeSelecting { .. } => "FreeSelecting",
+            EngineState::Editing => "Editing",
+            EngineState::Saving => "Saving",
+        }
+        .to_string();
+
+        let active_tool = format!("{:?}", self.editor.active_tool);
+
+        let selection = self
+            .editor
+            .selection
+            .map(|r| serde_json::to_value(r).expect("Rect serializes"));
+
+        let hovered_window = self
+            .hovered_window
+            .as_ref()
+            .map(|w| serde_json::to_value(w).expect("DetectedWindow serializes"));
+
+        let free_selecting = match self.state {
+            EngineState::FreeSelecting { start, current } => Some(serde_json::json!({
+                "start": { "x": start.x, "y": start.y },
+                "current": { "x": current.x, "y": current.y }
+            })),
+            _ => None,
+        };
+
+        harness_protocol::StateSnapshot {
+            state,
+            selection,
+            layers: self.editor.layers.len(),
+            active_tool,
+            hovered_window,
+            free_selecting,
+        }
+    }
+
+    pub fn set_active_tool(&mut self, tool: crate::core::editor::Tool) {
+        self.editor.active_tool = tool;
+    }
+
+    pub fn state_label(&self) -> &'static str {
+        match self.state {
+            EngineState::Idle => "Idle",
+            EngineState::Capturing => "Capturing",
+            EngineState::OverlayRunning => "OverlayRunning",
+            EngineState::FreeSelecting { .. } => "FreeSelecting",
+            EngineState::Editing => "Editing",
+            EngineState::Saving => "Saving",
+        }
+    }
+
+    pub fn append_text_layer(&mut self, text: &str) {
+        let layer = crate::core::editor::Layer::Text {
+            id: uuid::Uuid::new_v4().to_string(),
+            pos: self
+                .editor
+                .selection
+                .map(|s| LogicalPoint::new(s.x + 8.0, s.y + 8.0))
+                .unwrap_or(LogicalPoint::new(0.0, 0.0)),
+            text: text.to_string(),
+            font_size: 18.0,
+            color: self.editor.tool_color,
+        };
+        self.editor.add_layer(layer);
     }
 }
 
@@ -553,17 +635,30 @@ mod tests {
                 name: "Left".into(),
                 logical_bounds: Rect::new(0.0, 0.0, 1000.0, 500.0),
                 dpi_scale: 2.0,
+                physical_origin: (0, 0),
+                is_primary: true,
             },
             ScreenInfo {
                 id: "right".into(),
                 name: "Right".into(),
                 logical_bounds: Rect::new(1000.0, 0.0, 1000.0, 500.0),
                 dpi_scale: 2.0,
+                physical_origin: (2000, 0),
+                is_primary: false,
             },
         ];
-        assert_eq!(engine.screen_at_point(LogicalPoint::new(100.0, 100.0)), Some("left".into()));
-        assert_eq!(engine.screen_at_point(LogicalPoint::new(1100.0, 100.0)), Some("right".into()));
-        assert_eq!(engine.screen_at_point(LogicalPoint::new(9999.0, 9999.0)), None);
+        assert_eq!(
+            engine.screen_at_point(LogicalPoint::new(100.0, 100.0)),
+            Some("left".into())
+        );
+        assert_eq!(
+            engine.screen_at_point(LogicalPoint::new(1100.0, 100.0)),
+            Some("right".into())
+        );
+        assert_eq!(
+            engine.screen_at_point(LogicalPoint::new(9999.0, 9999.0)),
+            None
+        );
     }
 
     #[test]
@@ -576,14 +671,14 @@ mod tests {
             3.0,
             8.0,
         );
-        engine.screens = vec![
-            ScreenInfo {
-                id: "left".into(),
-                name: "Left".into(),
-                logical_bounds: Rect::new(0.0, 0.0, 1000.0, 500.0),
-                dpi_scale: 1.0,
-            },
-        ];
+        engine.screens = vec![ScreenInfo {
+            id: "left".into(),
+            name: "Left".into(),
+            logical_bounds: Rect::new(0.0, 0.0, 1000.0, 500.0),
+            dpi_scale: 1.0,
+            physical_origin: (0, 0),
+            is_primary: true,
+        }];
         engine.state = EngineState::OverlayRunning;
         // trigger free-select
         engine.on_mouse_down(LogicalPoint::new(10.0, 10.0));
@@ -603,14 +698,14 @@ mod tests {
             8.0,
         );
         engine.state = EngineState::OverlayRunning;
-        engine.screens = vec![
-            ScreenInfo {
-                id: "main".into(),
-                name: "Main".into(),
-                logical_bounds: Rect::new(0.0, 0.0, 1920.0, 1080.0),
-                dpi_scale: 1.0,
-            },
-        ];
+        engine.screens = vec![ScreenInfo {
+            id: "main".into(),
+            name: "Main".into(),
+            logical_bounds: Rect::new(0.0, 0.0, 1920.0, 1080.0),
+            dpi_scale: 1.0,
+            physical_origin: (0, 0),
+            is_primary: true,
+        }];
         let window = DetectedWindow {
             id: "w1".into(),
             title: "Test Window".into(),
@@ -674,7 +769,10 @@ mod tests {
         engine.select_hovered_window();
 
         assert!(matches!(engine.state, EngineState::Editing));
-        assert_eq!(engine.editor.selection, Some(Rect::new(0.0, 0.0, 500.0, 500.0)));
+        assert_eq!(
+            engine.editor.selection,
+            Some(Rect::new(0.0, 0.0, 500.0, 500.0))
+        );
         assert!(engine.event_bus.try_recv().is_none());
     }
 
@@ -702,7 +800,10 @@ mod tests {
         engine.on_selection_transform_drag(LogicalPoint::new(50.0, 30.0));
         engine.on_selection_transform_end(LogicalPoint::new(50.0, 30.0));
 
-        assert_eq!(engine.editor.selection, Some(Rect::new(50.0, 30.0, 100.0, 100.0)));
+        assert_eq!(
+            engine.editor.selection,
+            Some(Rect::new(50.0, 30.0, 100.0, 100.0))
+        );
         assert!(!engine.editor.undo_stack.is_empty());
     }
 
@@ -771,5 +872,35 @@ mod tests {
         engine.abort_edit_drag();
         assert!(engine.edit_drag_start.is_none());
         assert!(engine.editor.preview.is_none());
+    }
+
+    #[test]
+    fn snapshot_state_reflects_editing_with_layers() {
+        let mut engine = Engine::new(
+            "/tmp/test.png".into(),
+            "png".into(),
+            90,
+            Color::new(255, 0, 0, 255),
+            3.0,
+            8.0,
+        );
+        engine.state = EngineState::Editing;
+        engine.editor.selection = Some(Rect::new(100.0, 200.0, 300.0, 400.0));
+        engine.editor.active_tool = crate::core::editor::Tool::Rect;
+        engine
+            .editor
+            .layers
+            .push(crate::core::editor::Layer::ShapeRect {
+                id: "x".into(),
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+                stroke_width: 1.0,
+                color: Color::new(0, 0, 0, 255),
+            });
+
+        let snap = engine.snapshot_state();
+        assert_eq!(snap.state, "Editing");
+        assert_eq!(snap.layers, 1);
+        assert_eq!(snap.active_tool, "Rect");
+        assert!(snap.selection.is_some());
     }
 }

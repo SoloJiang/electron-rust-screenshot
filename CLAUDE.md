@@ -8,8 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **`crates/screenshot-core/`** — 纯 Rust 库，包含所有 native UI 逻辑（capture、overlay、editing、saving）。编译为 `rlib`。
 - **`crates/napi-bindings/`** — 轻量的 `cdylib` crate，通过 `napi-rs` 暴露 Node API。包含 `build.rs` 和 `bridge/` 模块。
+- **`crates/harness-protocol/`** — 纯数据 crate，定义 JSONL wire protocol 的 `Command`、`ServerMessage`、`Tier` 等类型，无外部依赖。
+- **`crates/validator/`** — Rust 二进制 crate，通过本地 socket 协议驱动引擎，解析 TOML spec 并输出测试报告。
 - **`dist/`** — 所有 napi 构建产物（`.node`、`index.js`、`index.d.ts`、`lib.js`）。
 - **`e2e/`** — 独立的 Node.js 项目，使用 Jest + AppleScript 进行 E2E 测试。
+- **`validator-specs/`** — TOML 格式的自动化测试场景，由 `validator` 二进制执行。
 
 ## 常用命令
 
@@ -38,6 +41,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 # 手动触发 overlay 进行交互验证（mode: interactive | jpg | clipboard）
 node scripts/demo.js interactive
+
+# 运行 validator 套件（需要 dist/ 已构建）
+npm run validator
+
+# 运行单个 validator spec
+cargo run --package validator -- validator-specs/smoke_cancel.toml --out validator-output
 ```
 
 ## 关键架构细节
@@ -65,11 +74,19 @@ node scripts/demo.js interactive
   - `engine.rs` — 状态机（`Idle -> Capturing -> OverlayRunning -> FreeSelecting -> Editing -> Saving`）。
   - `capture.rs` — `PlatformCapture` trait 和 `MockCapture`。
   - `editor.rs` — `EditorState`，包含 tool、layer、undo/redo。
-  - `events.rs` — `EngineEvent` enum 和 `EventBus`（基于 crossbeam-channel）。
+  - `events.rs` — `EngineEvent` enum 和 `EventBus`（基于 crossbeam-channel）。`EngineEvent::Metrics(MetricsPayload)` 是 internally-tagged enum（`#[serde(tag="type")]`）中的 newtype variant，serde 通常不支持此组合，但实测可正常序列化/反序列化。
   - `types.rs` — 逻辑坐标（`Rect`、`LogicalPoint`）、`Color`、`ScreenInfo`、`DetectedWindow`。
   - `dpi.rs` — 逻辑坐标与物理像素之间的转换。
   - `window.rs` — `WindowDetector`，基于 `rstar::RTree` 做窗口 hover 命中检测。
   - `perf.rs` — `PerformanceMonitor`，记录 hit-test 耗时并通过 `MetricsPayload` 上报。
+- **`harness/`** — 测试 harness：
+  - `protocol.rs` 在 `crates/harness-protocol/` 中 — `Command` / `ServerMessage` JSONL 协议。
+  - `transport.rs` / `server.rs` — 本地 socket 连接、命令队列、状态快照推送。
+  - `dispatch.rs` — 每帧 tick，将 inbound `Command` 分发给 `injector_scripted` 或 `injector_real`。
+  - `injector_scripted.rs` — 直接调用 engine 方法（绕开 UI 事件队列）。
+  - `injector_real/` — macOS 通过 `cliclick` 注入系统事件；非 macOS 为返回 `Unsupported` 的 stub。
+  - `coords.rs` — `logical_to_physical` 转换，用于 real-tier 坐标。
+  - `modifiers.rs` — 修饰键解析与平台键名映射。
 - **`overlay/`** — UI 层：
   - `manager.rs` — `OverlayManager` / `MultiWindowApp`（winit `ApplicationHandler`）。为每个物理 display 创建独立的窗口，各自持有独立的 `egui::Context`、`EguiState` 和 `egui_glow::Painter`，以避免 GL context 交叉污染。
   - `app.rs` — `ScreenshotApp`（egui app）。每个窗口接收一个 `global_offset`，因此所有显示器都能渲染完整的 frame 集合以支持跨屏拖拽。
@@ -100,12 +117,42 @@ node scripts/demo.js interactive
 2. **跨显示器拖拽** — 所有窗口共享同一个 `Arc<Mutex<Engine>>`。窗口本地坐标先转换为全局逻辑坐标，再传入 engine 的鼠标事件处理函数。
 3. **编辑态交互锁定** — 选区确认后 engine 进入 `Editing` 状态，`update_interactivity()` 计算哪些窗口与选区相交，并通过 `platform::Backend::set_mouse_passthrough` 对剩余显示器调用忽略鼠标事件。toolbar 只在包含选区中心的那台显示器上显示。
 4. **保存/合成** — `composite_image` 将选区与所有 screen frame 做 intersect，计算 union 输出图像（以 `dominant_dpi` 为基准），然后将每块裁剪区域叠加到最终图像上。
+5. **纹理尺寸上限** — `OverlayManager` 创建窗口时查询 OpenGL `MAX_TEXTURE_SIZE` 并传给 `egui_winit::State`，避免 egui 默认的 2048 限制导致 retina 截图纹理加载失败。
 
 ### 坐标系
 
 `core/` 内的所有几何数据均采用 **logical coordinates**。仅在 capture 时（`CGDisplayCreateImage`）和保存时（`dpi.rs`）才做物理像素转换。每个 overlay window 均按对应 display 的 logical bounds 设定大小。
 
-### E2E 自动化
+### Harness / Validator 自动化
+
+`crates/validator/` 是一个 Rust 二进制 crate，通过 **JSONL socket 协议** 直接驱动截图引擎，支持 `scripted`（直接调用 engine 方法）和 `real`（通过 `cliclick` 注入系统事件）两种 tier。
+
+常用命令：
+
+```bash
+# 运行所有 validator specs（需要 dist/ 已构建）
+npm run validator
+
+# 仅构建 validator
+npm run validator:build
+
+# 运行单个 spec
+cargo run --package validator -- validator-specs/smoke_cancel.toml --out validator-output
+
+# 运行端到端 smoke test（默认 #[ignore]，因为需要 dist/ 构建产物和 GUI 环境）
+cargo test --package validator --test smoke -- --ignored
+```
+
+`validator-specs/` 目录包含 TOML 格式的测试场景：
+
+- `smoke_cancel.toml` — 启动 overlay 后按 Escape 取消
+- `hybrid_save.toml` — scripted drag + real Enter 保存
+- `e2e_cancel.toml` / `e2e_free_select.toml` / `e2e_resize.toml` / `e2e_move.toml` — 对应原有 E2E 场景
+- `asserts_demo.toml` — 覆盖所有断言类型（event_emitted、artifact_exists、artifact_dimensions、performance 等）
+
+spec 支持 `setup`（save_path、format、quality）、`steps`（drag、key_press、wait_for、sleep 等）和 `asserts`（事件断言、文件断言、性能断言）。详细格式参考 `crates/validator/src/spec.rs`。
+
+### E2E 自动化（原有 Jest + AppleScript）
 
 E2E 套件（`e2e/`）通过 AppleScript 调用 `cliclick` 模拟鼠标/键盘。关键 helper：
 
@@ -138,3 +185,16 @@ E2E 套件（`e2e/`）通过 AppleScript 调用 `cliclick` 模拟鼠标/键盘�
 - **代码质量**：坚持清晰的错误传播（优先 `Result` 而非 `unwrap`/`expect`），避免在 GUI 初始化路径中吞掉错误；unsafe block 需最小化并封装成可审查的边界层。
 - **职责明确**：`screenshot-core` 中不应出现 `napi` 依赖或 Node 相关逻辑；`napi-bindings` 层只做数据转换与 API 暴露。overlay 只负责渲染与事件分发，合成算法放在 `save.rs`，状态机放在 `engine.rs`。
 - **可测试**：核心业务逻辑（engine、editor、composite、geometry）必须能在不启动窗口系统的情况下通过单元/集成测试覆盖。新增功能时同步添加测试；mock 实现参考 `capture.rs` 中的 `MockCapture`。
+
+## 常见陷阱与工具链
+
+### Validator / Harness Gotchas
+
+- `interprocess::TryClone` blanket impl：`&T` implements `TryClone` if `T: Clone`，所以 `listener.try_clone()` 在 `&Listener` 上会返回 `Result<&Listener>`。应直接传递 owned `Listener` 来避免。
+- `cargo fmt --all` 会就地修改文件 —— 如果上次 `Read` 之后执行过 fmt，编辑前必须重新 `Read`。
+
+### GitHub PR Review Workflow
+
+- Resolve review thread 必须用 GraphQL：`mutation { resolveReviewThread(input: {threadId: "PRRT_..."}) }`
+- 回复 review comment：`gh api repos/{o}/{r}/pulls/{n}/comments/{id}/replies -f body="..."`
+- 列出 review comments：`gh api repos/{o}/{r}/pulls/{n}/comments --paginate`

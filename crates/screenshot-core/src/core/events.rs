@@ -1,17 +1,34 @@
 use super::types::{DetectedWindow, Rect, ScreenInfo};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum EngineEvent {
-    Started { screens: Vec<ScreenInfo> },
-    WindowHovered { window: DetectedWindow },
-    RegionSelected { screen_id: String, rect: Rect },
-    Saved { path: String, copied: bool },
+    Started {
+        screens: Vec<ScreenInfo>,
+    },
+    WindowHovered {
+        window: DetectedWindow,
+    },
+    RegionSelected {
+        #[serde(rename = "screenId")]
+        screen_id: String,
+        rect: Rect,
+    },
+    Saved {
+        path: String,
+        copied: bool,
+    },
     Cancelled,
-    Error { code: ErrorCode, message: String },
+    Error {
+        code: ErrorCode,
+        message: String,
+    },
     Metrics(MetricsPayload),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ErrorCode {
     CaptureFailed,
     NoDisplay,
@@ -32,7 +49,8 @@ impl std::fmt::Display for ErrorCode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MetricsPayload {
     pub capture_ms: f64,
     pub window_enum_ms: f64,

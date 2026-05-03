@@ -84,7 +84,8 @@ pub fn composite_image(frames: &[ScreenFrame], editor: &EditorState) -> Result<R
         let cropped = image::imageops::crop_imm(&frame.image, x, y, w, h).to_image();
 
         let offset_in_union = global_to_local(overlap, union_rect);
-        let output_offset = crate::core::dpi::rect_logical_to_physical(offset_in_union, dominant_dpi);
+        let output_offset =
+            crate::core::dpi::rect_logical_to_physical(offset_in_union, dominant_dpi);
         let ox = output_offset.x as i64;
         let oy = output_offset.y as i64;
 

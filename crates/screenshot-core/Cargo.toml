@@ -21,6 +21,12 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 sysinfo = "0.30"
 parking_lot = "0.12"
 crossbeam-channel = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+harness-protocol = { path = "../harness-protocol" }
+interprocess = { version = "2", default-features = false }
+log = "0.4"
+which = "6"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.24"

@@ -5,9 +5,10 @@ use crate::overlay::app::ScreenshotApp;
 use crate::overlay::gl::GlContext;
 use crate::platform::traits::PlatformOverlay;
 use egui_winit::State as EguiState;
+use glow::HasContext;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::Mutex;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -24,7 +25,8 @@ impl OverlayManager {
     }
 
     pub fn run(self) -> Result<(), String> {
-        let event_loop = EventLoop::new().map_err(|e| format!("Failed to create event loop: {e}"))?;
+        let event_loop =
+            EventLoop::new().map_err(|e| format!("Failed to create event loop: {e}"))?;
         event_loop.set_control_flow(ControlFlow::Wait);
         let mut app = MultiWindowApp::new(self.engine, self.frames);
         let _ = event_loop.run_app(&mut app);
@@ -59,6 +61,7 @@ struct MultiWindowApp {
     start_time: Option<std::time::Instant>,
     mock_drag_done: bool,
     modifiers: winit::keyboard::ModifiersState,
+    harness: Option<crate::harness::Harness>,
 }
 
 impl MultiWindowApp {
@@ -69,10 +72,14 @@ impl MultiWindowApp {
             start_time: None,
             mock_drag_done: false,
             modifiers: winit::keyboard::ModifiersState::empty(),
+            harness: None,
         }
     }
 
-    fn interactive_window_ids(&self, selection: Rect) -> std::collections::HashSet<winit::window::WindowId> {
+    fn interactive_window_ids(
+        &self,
+        selection: Rect,
+    ) -> std::collections::HashSet<winit::window::WindowId> {
         self.windows
             .iter()
             .filter(|(_, ws)| ws.screen_bounds.intersects(selection))
@@ -109,10 +116,11 @@ impl MultiWindowApp {
             }
         };
 
-        let interactive_ids: std::collections::HashSet<winit::window::WindowId> = match selection_opt {
-            Some(sel) => self.interactive_window_ids(sel),
-            None => self.windows.keys().copied().collect(),
-        };
+        let interactive_ids: std::collections::HashSet<winit::window::WindowId> =
+            match selection_opt {
+                Some(sel) => self.interactive_window_ids(sel),
+                None => self.windows.keys().copied().collect(),
+            };
 
         let all_ids: Vec<winit::window::WindowId> = self.windows.keys().copied().collect();
         for id in all_ids {
@@ -132,6 +140,13 @@ impl ApplicationHandler for MultiWindowApp {
             return;
         }
 
+        if self.harness.is_none() {
+            self.harness = crate::harness::bootstrap();
+            if self.harness.is_some() {
+                log::info!("harness: connected and ready");
+            }
+        }
+
         for frame in frames {
             let b = frame.logical_bounds;
             let window_attributes = Window::default_attributes()
@@ -145,7 +160,10 @@ impl ApplicationHandler for MultiWindowApp {
             let window = match event_loop.create_window(window_attributes) {
                 Ok(w) => w,
                 Err(e) => {
-                    eprintln!("[overlay] failed to create window for screen {}: {}", frame.screen_id, e);
+                    eprintln!(
+                        "[overlay] failed to create window for screen {}: {}",
+                        frame.screen_id, e
+                    );
                     continue;
                 }
             };
@@ -155,10 +173,15 @@ impl ApplicationHandler for MultiWindowApp {
             let gl = match unsafe { GlContext::new(&window, event_loop) } {
                 Ok(gl) => gl,
                 Err(e) => {
-                    eprintln!("[overlay] failed to create GL context for screen {}: {}", frame.screen_id, e);
+                    eprintln!(
+                        "[overlay] failed to create GL context for screen {}: {}",
+                        frame.screen_id, e
+                    );
                     continue;
                 }
             };
+            let max_texture_side =
+                unsafe { gl.gl.get_parameter_i32(glow::MAX_TEXTURE_SIZE) as usize };
             let egui_ctx = egui::Context::default();
             let egui_state = EguiState::new(
                 egui_ctx.clone(),
@@ -166,7 +189,7 @@ impl ApplicationHandler for MultiWindowApp {
                 &window,
                 Some(window.scale_factor() as f32),
                 None,
-                None::<usize>,
+                Some(max_texture_side),
             );
 
             // Each window gets ALL frames so cross-screen content renders correctly
@@ -177,7 +200,10 @@ impl ApplicationHandler for MultiWindowApp {
             let painter = match egui_glow::Painter::new(gl.gl.clone(), "", None, true) {
                 Ok(p) => p,
                 Err(e) => {
-                    eprintln!("[overlay] failed to create egui painter for screen {}: {}", frame.screen_id, e);
+                    eprintln!(
+                        "[overlay] failed to create egui painter for screen {}: {}",
+                        frame.screen_id, e
+                    );
                     continue;
                 }
             };
@@ -291,32 +317,33 @@ impl ApplicationHandler for MultiWindowApp {
                 {
                     let mut engine = self.engine.lock();
                     if matches!(engine.state, crate::core::engine::EngineState::Editing) {
-                        match &event.logical_key {
-                            winit::keyboard::Key::Character(c) => {
-                                let key = c.as_str();
-                                match key {
-                                    "c" | "C" => {
-                                        engine.copy_to_clipboard();
-                                    }
-                                    _ => {}
+                        if let winit::keyboard::Key::Character(c) = &event.logical_key {
+                            let key = c.as_str();
+                            match key {
+                                "c" | "C" => {
+                                    engine.copy_to_clipboard();
                                 }
+                                _ => {}
                             }
-                            _ => {}
                         }
                     }
                 }
             }
             WindowEvent::RedrawRequested => {
                 if let Err(e) = ws.gl_context.make_current() {
-                    eprintln!("[overlay] make_current failed for window {:?}: {}", window_id, e);
+                    eprintln!(
+                        "[overlay] make_current failed for window {:?}: {}",
+                        window_id, e
+                    );
                     return;
                 }
                 let frame_start = std::time::Instant::now();
                 let size = ws.window.inner_size();
                 ws.gl_context.resize(size.width, size.height);
                 unsafe {
-                    use glow::HasContext;
-                    ws.gl_context.gl.viewport(0, 0, size.width as i32, size.height as i32);
+                    ws.gl_context
+                        .gl
+                        .viewport(0, 0, size.width as i32, size.height as i32);
                     ws.gl_context.gl.clear_color(0.0, 0.0, 0.0, 0.0);
                     ws.gl_context.gl.clear(glow::COLOR_BUFFER_BIT);
                 }
@@ -333,10 +360,12 @@ impl ApplicationHandler for MultiWindowApp {
                         show_toolbar,
                     );
                 });
-                ws.egui_state.handle_platform_output(&ws.window, full_output.platform_output);
+                ws.egui_state
+                    .handle_platform_output(&ws.window, full_output.platform_output);
 
-                let clipped_primitives =
-                    ws.egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
+                let clipped_primitives = ws
+                    .egui_ctx
+                    .tessellate(full_output.shapes, full_output.pixels_per_point);
                 let ppp = full_output.pixels_per_point;
                 let paint_start = std::time::Instant::now();
                 ws.painter.paint_and_update_textures(
@@ -367,6 +396,15 @@ impl ApplicationHandler for MultiWindowApp {
         }
 
         self.update_interactivity();
+
+        if let Some(harness_handle) = self.harness.as_mut() {
+            let mut engine = self.engine.lock();
+            crate::harness::dispatch::tick(
+                &mut engine,
+                &mut harness_handle.server,
+                &mut harness_handle.dispatch_state,
+            );
+        }
 
         if self.engine.lock().should_close {
             event_loop.exit();

@@ -1,8 +1,6 @@
 use crate::core::capture::{CaptureError, PlatformCapture, ScreenFrame};
 use crate::core::types::Rect;
-use core_graphics::display::{
-    CGDisplayBounds, CGDisplayCreateImage, CGGetActiveDisplayList,
-};
+use core_graphics::display::{CGDisplayBounds, CGDisplayCreateImage, CGGetActiveDisplayList};
 use core_graphics::image::CGImage;
 use foreign_types::ForeignType;
 use image::RgbaImage;
@@ -26,7 +24,7 @@ impl MacOsCgCapture {
         let mut rgba = RgbaImage::new(width, height);
         let data = img.data();
         let bytes = data.bytes();
-        let bytes_per_row = img.bytes_per_row() as usize;
+        let bytes_per_row = img.bytes_per_row();
         for y in 0..height {
             for x in 0..width {
                 let idx = (y as usize * bytes_per_row) + (x as usize * 4);
@@ -63,7 +61,10 @@ impl PlatformCapture for MacOsCgCapture {
             let bounds = unsafe { CGDisplayBounds(id) };
             let cg_img = unsafe { CGDisplayCreateImage(id) };
             if cg_img.is_null() {
-                eprintln!("[capture_cg] display {}: CGDisplayCreateImage returned null", id);
+                eprintln!(
+                    "[capture_cg] display {}: CGDisplayCreateImage returned null",
+                    id
+                );
                 continue;
             }
             let cg_image = unsafe { CGImage::from_ptr(cg_img) };

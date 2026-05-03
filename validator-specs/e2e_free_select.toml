@@ -1,0 +1,52 @@
+[meta]
+name = "e2e_free_select"
+tier = "scripted"
+timeout_ms = 10000
+description = "Drag to select a region, then save"
+
+[setup]
+save_path = "/tmp/validator-e2e-free-select.png"
+format = "png"
+
+[[steps]]
+kind = "wait_for"
+event = "started"
+timeout_ms = 3000
+
+[[steps]]
+kind = "drag"
+from = [500.0, 500.0]
+to = [700.0, 600.0]
+mode = "scripted"
+
+[[steps]]
+kind = "wait_for"
+event = "regionSelected"
+timeout_ms = 2000
+
+[[steps]]
+kind = "save"
+mode = "scripted"
+
+[[steps]]
+kind = "wait_for"
+event = "saved"
+timeout_ms = 3000
+
+[[asserts]]
+kind = "event_emitted"
+event = "regionSelected"
+
+[[asserts]]
+kind = "event_emitted"
+event = "saved"
+
+[[asserts]]
+kind = "artifact_exists"
+path = "/tmp/validator-e2e-free-select.png"
+
+[[asserts]]
+kind = "artifact_dimensions"
+path = "/tmp/validator-e2e-free-select.png"
+width = 200
+height = 100
