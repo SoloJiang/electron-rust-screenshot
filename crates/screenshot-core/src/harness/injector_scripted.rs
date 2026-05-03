@@ -119,7 +119,9 @@ pub fn run_scripted(engine: &mut Engine, cmd: &Command) -> InjectorResult {
             None => InjectorResult::Failed(format!("InvalidArguments:tool={}", tool)),
         },
         Command::SnapshotRequest { .. } => InjectorResult::Ok,
-        Command::CompositeRequest { save_path, format, .. } => {
+        Command::CompositeRequest {
+            save_path, format, ..
+        } => {
             match crate::overlay::save::composite_and_save(
                 &engine.frames,
                 &engine.editor,
