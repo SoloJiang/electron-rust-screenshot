@@ -87,7 +87,10 @@ impl Engine {
                         name: format!("Screen {}", f.screen_id),
                         logical_bounds: f.logical_bounds,
                         dpi_scale: f.dpi_scale,
-                        physical_origin: (0, 0),
+                        physical_origin: (
+                            (f.logical_bounds.x * f.dpi_scale).round() as i32,
+                            (f.logical_bounds.y * f.dpi_scale).round() as i32,
+                        ),
                         is_primary: false,
                     })
                     .collect();

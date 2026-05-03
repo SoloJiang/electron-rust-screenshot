@@ -19,9 +19,9 @@ pub struct RunOutcome {
     pub duration: Duration,
 }
 
-pub fn run(spec: &Spec) -> Result<RunOutcome> {
+pub fn run(spec: &Spec, engine_path: Option<&str>) -> Result<RunOutcome> {
     let setup_json = setup_to_json(spec);
-    let child = EngineChild::spawn(&setup_json)?;
+    let child = EngineChild::spawn(&setup_json, engine_path)?;
     let stream = child.stream.try_clone()?;
     let mut client = Client::new(stream)?;
 
@@ -60,19 +60,35 @@ pub fn run(spec: &Spec) -> Result<RunOutcome> {
 
     // Drive steps
     let started = Instant::now();
+    let spec_deadline = started + Duration::from_millis(spec.meta.timeout_ms);
     let mut seq = 1u64;
     for step in &spec.steps {
-        match translate_step(step, &mut seq) {
+        if Instant::now() > spec_deadline {
+            return Err(anyhow!(
+                "spec timeout exceeded ({} ms)",
+                spec.meta.timeout_ms
+            ));
+        }
+        match translate_step(step, &mut seq, &spec.meta.tier) {
             Some(StepAction::Send(cmd)) => client.send(&cmd)?,
             Some(StepAction::WaitFor { event, timeout_ms }) => {
                 let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+                let mut found = false;
                 while Instant::now() < deadline {
                     let tl = timeline.lock().unwrap();
                     if tl.engine_events().any(|ev| event_matches_name(ev, &event)) {
+                        found = true;
                         break;
                     }
                     drop(tl);
                     thread::sleep(Duration::from_millis(10));
+                }
+                if !found {
+                    return Err(anyhow!(
+                        "wait_for '{}' timed out after {} ms",
+                        event,
+                        timeout_ms
+                    ));
                 }
             }
             Some(StepAction::Sleep(ms)) => thread::sleep(Duration::from_millis(ms)),
@@ -134,11 +150,16 @@ enum StepAction {
     Sleep(u64),
 }
 
-fn translate_step(step: &Step, seq: &mut u64) -> Option<StepAction> {
+fn translate_step(step: &Step, seq: &mut u64, tier_default: &str) -> Option<StepAction> {
     let s = *seq;
     *seq += 1;
     let mode = |m: &str| {
-        if m == "real" {
+        let effective = if m.is_empty() || m == "scripted" {
+            tier_default
+        } else {
+            m
+        };
+        if effective == "real" {
             Tier::Real
         } else {
             Tier::Scripted
@@ -300,10 +321,8 @@ fn evaluate_assert(a: &Assert, tl: &Timeline) -> Result<(), String> {
             max_diff_ratio,
         } => asserts::pixel_diff::check(path, against, *max_diff_ratio),
         Assert::Performance { metric, max_ms } => asserts::performance::check(tl, metric, *max_ms),
-        Assert::StateAt { step, expect: _ } => {
-            // StateAt not yet implemented — treat as pass for now.
-            log::warn!("state_at assertion on step '{step}' not yet implemented");
-            Ok(())
-        }
+        Assert::StateAt { step, .. } => Err(format!(
+            "state_at assertion on step '{step}' not yet implemented"
+        )),
     }
 }

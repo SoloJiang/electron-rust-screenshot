@@ -1,7 +1,10 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use interprocess::local_socket::{prelude::*, GenericFilePath, ListenerOptions, ToFsName};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::time::Duration;
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct EngineChild {
     pub process: Child,
@@ -10,7 +13,7 @@ pub struct EngineChild {
 }
 
 impl EngineChild {
-    pub fn spawn(setup_json: &str) -> Result<Self> {
+    pub fn spawn(setup_json: &str, engine_path: Option<&str>) -> Result<Self> {
         let socket_path = unique_socket_path();
         let name = socket_path
             .clone()
@@ -21,8 +24,9 @@ impl EngineChild {
             .create_sync()
             .context("failed to create listener")?;
 
+        let engine = engine_path.unwrap_or("./dist/lib");
         let script = format!(
-            "const {{start}} = require('./dist/lib'); \
+            "const {{start}} = require('{engine}'); \
              const cfg = {setup_json}; \
              try {{ \
                const r = start(cfg); \
@@ -33,7 +37,7 @@ impl EngineChild {
              }}"
         );
 
-        let process = Command::new("node")
+        let mut process = Command::new("node")
             .args(["-e", &script])
             .env("SCREENSHOT_HARNESS_SOCKET", &socket_path)
             .stdout(Stdio::piped())
@@ -41,7 +45,7 @@ impl EngineChild {
             .spawn()
             .context("failed to spawn node engine")?;
 
-        let stream = listener.accept().context("listener.accept")?;
+        let stream = accept_with_timeout(listener, &mut process)?;
 
         Ok(Self {
             process,
@@ -61,6 +65,30 @@ impl Drop for EngineChild {
     fn drop(&mut self) {
         let _ = self.process.kill();
         let _ = std::fs::remove_file(&self.socket_path);
+    }
+}
+
+fn accept_with_timeout(
+    listener: interprocess::local_socket::Listener,
+    process: &mut Child,
+) -> Result<interprocess::local_socket::Stream> {
+    let (tx, rx) = std::sync::mpsc::channel::<Result<interprocess::local_socket::Stream>>();
+    std::thread::spawn(move || {
+        if let Ok(stream) = listener.accept() {
+            let _ = tx.send(Ok(stream));
+        }
+    });
+
+    match rx.recv_timeout(CONNECT_TIMEOUT) {
+        Ok(Ok(stream)) => Ok(stream),
+        Ok(Err(e)) => Err(anyhow!("accept failed: {e}")),
+        Err(_) => {
+            let _ = process.kill();
+            Err(anyhow!(
+                "engine child did not connect within {:?}",
+                CONNECT_TIMEOUT
+            ))
+        }
     }
 }
 

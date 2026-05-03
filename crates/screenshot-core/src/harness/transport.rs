@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 pub struct Transport {
     reader: BufReader<Stream>,
     writer: Arc<Mutex<Stream>>,
+    read_buffer: String,
 }
 
 impl Transport {
@@ -24,6 +25,7 @@ impl Transport {
         Ok(Self {
             reader: BufReader::new(conn),
             writer: Arc::new(Mutex::new(writer_clone)),
+            read_buffer: String::new(),
         })
     }
 
@@ -33,6 +35,7 @@ impl Transport {
         Ok(Self {
             reader: BufReader::new(stream),
             writer: Arc::new(Mutex::new(writer_clone)),
+            read_buffer: String::new(),
         })
     }
 
@@ -43,16 +46,23 @@ impl Transport {
     /// Returns Ok(Some(line)) if a full \n-terminated line is buffered,
     /// Ok(None) if not enough data without blocking, Err on EOF or io error.
     pub fn try_read_line(&mut self) -> io::Result<Option<String>> {
-        let mut buf = String::new();
-        match self.reader.read_line(&mut buf) {
-            Ok(0) => Err(io::Error::new(io::ErrorKind::UnexpectedEof, "peer closed")),
+        match self.reader.read_line(&mut self.read_buffer) {
+            Ok(0) => {
+                if self.read_buffer.is_empty() {
+                    Err(io::Error::new(io::ErrorKind::UnexpectedEof, "peer closed"))
+                } else {
+                    // EOF with partial line remaining — return what we have
+                    let line = std::mem::take(&mut self.read_buffer);
+                    Ok(Some(line))
+                }
+            }
             Ok(_) => {
-                if buf.ends_with('\n') {
-                    buf.pop();
-                    if buf.ends_with('\r') {
-                        buf.pop();
+                if self.read_buffer.ends_with('\n') {
+                    self.read_buffer.pop();
+                    if self.read_buffer.ends_with('\r') {
+                        self.read_buffer.pop();
                     }
-                    Ok(Some(buf))
+                    Ok(Some(std::mem::take(&mut self.read_buffer)))
                 } else {
                     Ok(None)
                 }

@@ -22,7 +22,12 @@ fn main() -> Result<()> {
     for spec_path in &args.specs {
         let spec = spec::load(spec_path)?;
         log::info!("running spec: {} ({})", spec.meta.name, spec_path.display());
-        match runner::run(&spec) {
+        let engine_str = args
+            .engine
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned());
+        let engine = engine_str.as_deref();
+        match runner::run(&spec, engine) {
             Ok(outcome) => {
                 report::write(&args.out, &outcome)?;
                 replay::write(&args.out, &spec, &outcome)?;
