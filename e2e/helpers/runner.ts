@@ -8,7 +8,7 @@ export async function runScreenshot(
   timeoutMs = 15000
 ): Promise<any> {
   const tmpFile = `/tmp/screenshot-result-${Date.now()}.json`;
-  const libPath = path.resolve(__dirname, '../../dist/lib');
+  const indexPath = path.resolve(__dirname, '../../dist/index');
 
   let childExited = false;
   let childExitCode: number | null = null;
@@ -19,9 +19,14 @@ export async function runScreenshot(
     [
       '-e',
       `const fs = require('fs');
-const { start } = require('${libPath}');
-const result = start(${JSON.stringify(config)});
-fs.writeFileSync('${tmpFile}', JSON.stringify(result));
+const { start } = require('${indexPath}');
+const raw = start(${JSON.stringify(config)});
+try {
+  const result = JSON.parse(raw);
+  fs.writeFileSync('${tmpFile}', JSON.stringify(result));
+} catch (e) {
+  fs.writeFileSync('${tmpFile}', JSON.stringify({ type: 'error', message: String(raw) }));
+}
 `,
     ],
     {
