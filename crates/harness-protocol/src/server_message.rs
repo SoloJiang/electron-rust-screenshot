@@ -34,3 +34,14 @@ pub enum ServerMessage {
     },
     CommandAck(CommandAck),
 }
+
+impl ServerMessage {
+    pub fn seq(&self) -> u64 {
+        match self {
+            ServerMessage::Hello { seq, .. } => *seq,
+            ServerMessage::EngineEvent { seq, .. } => *seq,
+            ServerMessage::StateSnapshot { seq, .. } => *seq,
+            ServerMessage::CommandAck(ack) => ack.seq,
+        }
+    }
+}
